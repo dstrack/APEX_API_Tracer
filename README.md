@@ -1,4 +1,4 @@
-# APEX_API_Tracer enables the tracing of calls to package procedures or functions without manual programming.
+# APEX_API_Tracer enables the tracing of calls to package procedures or functions into the APEX Debug Log without manual programming.
 
 This program can generate a package for tracing automatically when the following conditions apply:
 
@@ -46,7 +46,7 @@ In the section 'Trace Code for LOCAL packages'
   Copy the listed code into your package to enable tracing of your procedures and functions.
   The generated code uses the api_trace. Literal function to convert the passed values to quoted literals.
   The function api_trace.Literal is overloaded to support many data types. Datatypes that can not be 
-  converted like records are logged with a <datatype> placeholder. The logged values are truncated to a maximum length.
+  converted like records are logged with a <datatype x> placeholder. The logged values are truncated to a maximum length.
   There is no upper limit for the number of arguments the you can pass the the api_trace logging functions.
   The compact form of the generated code executed directly with the simple passing of the function arguments list.
   The number of arguments will be checked at runtime to match the count of arguments of the current calling function.
@@ -91,3 +91,10 @@ GRANT CREATE ANY SYNONYM TO <schema_name>;
 GRANT DROP ANY SYNONYM TO <schema_name>;
 GRANT CREATE ANY VIEW TO <schema_name>;
 GRANT DROP ANY VIEW TO <schema_name>;
+
+A demo of the app can be found here:
+
+https://yboieokpjit8ejk-strackdev02.adb.eu-frankfurt-1.oraclecloudapps.com/ords/f?p=104:9999
+
+User/Password: demo/simple2021
+
