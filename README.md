@@ -6,7 +6,7 @@ This program can generate a package for tracing automatically when the following
   2. the procedure or function is listed in the package header.
   3. there are no pipelined functions in the package.
   4. the package defines no record or table types.
-  5. the package header is not wrapped
+  5. the package header is not wrapped.
 
 The enable procedure will generate a package with the same name as the synonym in your local schema.
 
@@ -46,7 +46,7 @@ In the section 'Trace Code for LOCAL packages'
   Copy the listed code into your package to enable tracing of your procedures and functions.
   The generated code uses the api_trace. Literal function to convert the passed values to quoted literals.
   The function api_trace.Literal is overloaded to support many data types. Datatypes that can not be 
-  converted like records are logged with a <datatype> placeholder. The logged value is truncated to a maximum length.
+  converted like records are logged with a <datatype> placeholder. The logged values are truncated to a maximum length.
   There is no upper limit for the number of arguments the you can pass the the api_trace logging functions.
   The compact form of the generated code executed directly with the simple passing of the function arguments list.
   The number of arguments will be checked at runtime to match the count of arguments of the current calling function.
