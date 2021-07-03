@@ -6,7 +6,7 @@ This program can generate a package for tracing automatically when the following
   2. the procedure or function is listed in the package header.
   3. there are no pipelined functions in the package.
   4. the package defines no record or table types.
-  5. the package header is not wrapped
+  5. the package header is not wrapped.
 
 The enable procedure will generate a package with the same name as the synonym in your local schema.
 
