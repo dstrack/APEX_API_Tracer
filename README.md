@@ -16,9 +16,9 @@ The package will contain the same functions and procedures as the original packa
 
 In each function and procedure exists 
 
-  1. A call to APEX_DEBUG.MESSAGE to produce log entries with text for valid PL/SQL procedure calls with enquoted parameters, that you can copy and paste into the sql console for testing.
+  1. A call to APEX_DEBUG.LOG_LONG_MESSAGE to produce log entries with text for valid PL/SQL procedure calls with enquoted parameters, that you can copy and paste into the sql console for testing.
   2. A call to invocate the original procedure or functions.
-  3. A call to APEX_DEBUG.MESSAGE to produce log entries for the output values and return values of the invocation.
+  3. A call to APEX_DEBUG.LOG_LONG_MESSAGE to produce log entries for the output values and return values of the invocation.
 
 For other packages where the above-mentioned conditions do not apply, you can manually add invocations to the api_trace package to support logging for prepared functions or procedures in your own packages. When you 
 
@@ -47,21 +47,23 @@ In the section 'Trace Code for LOCAL packages'
   The generated code uses the api_trace. Literal function to convert the passed values to quoted literals.
   The function api_trace.Literal is overloaded to support many data types. Datatypes that can not be 
   converted like records are logged with a <datatype> placeholder. The logged value is truncated to a maximum length.
-  The compact form of the generated code executed directly with the simple passing of the function arguments.
+  There is no upper limit for the number of arguments the you can pass the the api_trace logging functions.
+  The compact form of the generated code executed directly with the simple passing of the function arguments list.
+  The number of arguments will be checked at runtime to match the count of arguments of the current calling function.
   
 In an sql-worksheet or sqlplus
 Use the package_tracer.Enable procedure to start tracing of a package.
 
 Use the package_tracer.Disable procedure to stop tracing of a package.
 
-# What this procedures do
+# What these procedures do:
 1. enable
     detect local packages with the same name that may be overwritten.
     support local synonyms. 
         local synonym is dropped before the package is created.
         The origial synonym definition is captured in a comment of the generated package header.
     produce synonyms and grants for dependent objects.
-    In the case that additiona privileges are required, print grant statements and then stop.
+    In the case that additional privileges are required, print grant statements and then stop.
     create a package header as a slimmed copy of the target package.
     create a package body that for each procedure or function
         prints the call parameter in the APEX debug log.
