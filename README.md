@@ -51,6 +51,13 @@ In the section 'Trace Code for LOCAL packages'
   The compact form of the generated code executed directly with the simple passing of the function arguments list.
   The number of arguments will be checked at runtime to match the count of arguments of the current calling function.
   
+In the section 'Publish Application Objects in other Schema' 
+  you can produce a copy of a schema.
+  The target schema name should be a new empty schema, that was created in the APEX Admin / Workspace to Schema Assignment page.
+  In the copy tables and views are present as views that access the original tables and views.
+  Other objects like packages, functions, procedures, and types are represented as synonyms.
+  An application that can run in the original schema will be able to run in the copied schema too.
+  
 In an sql-worksheet or sqlplus
 Use the package_tracer.Enable procedure to start tracing of a package.
 
