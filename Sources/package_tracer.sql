@@ -61,9 +61,6 @@ GRANT DROP ANY VIEW TO <schema_name>;
 CREATE OR REPLACE PACKAGE package_tracer
 AUTHID CURRENT_USER 
 IS
-    c_APEX_Logging_Start_Call  CONSTANT VARCHAR2(1000) := 'apex_debug.message(p_message=>''Start  %%s'', p0=>%s, p_max_length=>3700);';
-    c_APEX_Logging_Finish_Call CONSTANT VARCHAR2(1000) := 'apex_debug.message(p_message=>''Finish %%s'', p0=>%s, p_max_length=>3700);';
-    c_APEX_Logging_API_Call    CONSTANT VARCHAR2(1000) := 'apex_debug.message(p_message=>''API: %%s'', p0=>%s, p_max_length=>3700);';
 	c_APEX_Condition_Start     CONSTANT VARCHAR2(1000) := 'if apex_application.g_debug then';
 	c_APEX_Condition_End       CONSTANT VARCHAR2(1000) := 'end if;';
 	c_Package_Name             CONSTANT VARCHAR2(128) := lower($$plsql_unit);
@@ -97,7 +94,6 @@ IS
         Package_Name    VARCHAR2(128)
     );
     TYPE tab_synonyms IS TABLE OF rec_synonyms;
-    TYPE cur_synonyms IS REF CURSOR RETURN rec_synonyms;
 
     FUNCTION get_APEX_Packages_List RETURN tab_synonyms PIPELINED;
     FUNCTION get_Packages_List (
@@ -177,9 +173,9 @@ IS
         p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
         p_Compact IN VARCHAR2 DEFAULT 'Y', --Y/N
         p_Logging_Start_Enabled VARCHAR2 DEFAULT 'N', --Y/N
-        p_Logging_Start_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,
-        p_Logging_Finish_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Finish_Call,
-        p_Logging_API_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,
+        p_Logging_Start_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Start_Call,
+        p_Logging_Finish_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Exit_Call,
+        p_Logging_API_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_API_Call,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result',
         p_Condition_Start IN VARCHAR2 DEFAULT c_APEX_Condition_Start,
         p_Condition_End IN VARCHAR2 DEFAULT c_APEX_Condition_End,
@@ -202,9 +198,9 @@ IS
         p_Package_Name IN VARCHAR2,
         p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
         p_Logging_Start_Enabled VARCHAR2 DEFAULT 'N', --Y/N
-        p_Logging_Start_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,
-        p_Logging_Finish_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Finish_Call,
-        p_Logging_API_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,
+        p_Logging_Start_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Start_Call,
+        p_Logging_Finish_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Exit_Call,
+        p_Logging_API_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_API_Call,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result',
         p_Use_Dbms_Output BOOLEAN DEFAULT TRUE,
         p_Do_Execute BOOLEAN DEFAULT TRUE,
@@ -214,9 +210,9 @@ IS
     PROCEDURE Enable_APEX (
         p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
         p_Logging_Start_Enabled VARCHAR2 DEFAULT 'N', --Y/N
-        p_Logging_Start_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,
-        p_Logging_Finish_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Finish_Call,
-        p_Logging_API_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,
+        p_Logging_Start_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Start_Call,
+        p_Logging_Finish_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Exit_Call,
+        p_Logging_API_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_API_Call,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result',
         p_Use_Dbms_Output BOOLEAN DEFAULT TRUE,
         p_Do_Execute BOOLEAN DEFAULT TRUE
@@ -918,9 +914,9 @@ IS
         p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
         p_Compact IN VARCHAR2 DEFAULT 'Y', --Y/N
         p_Logging_Start_Enabled VARCHAR2 DEFAULT 'N', --Y/N
-        p_Logging_Start_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,
-        p_Logging_Finish_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Finish_Call,
-        p_Logging_API_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,
+        p_Logging_Start_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Start_Call,
+        p_Logging_Finish_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Exit_Call,
+        p_Logging_API_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_API_Call,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result',
         p_Condition_Start IN VARCHAR2 DEFAULT c_APEX_Condition_Start,
         p_Condition_End IN VARCHAR2 DEFAULT c_APEX_Condition_End,
@@ -944,6 +940,7 @@ IS
         	SELECT PACKAGE_NAME, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD,
         		INITCAP(PACKAGE_NAME) || '.' || INITCAP(OBJECT_NAME) CALLING_SUBPROG, 
         		LISTAGG(LOWER(ARGUMENT_NAME) , ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST,
+        		LISTAGG(CASE WHEN IN_OUT IN ('IN/OUT', 'OUT') THEN LOWER(ARGUMENT_NAME) END, ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_OUT,
         		SUM(CASE WHEN IN_OUT IN ('IN/OUT', 'OUT') AND ARGUMENT_NAME IS NOT NULL THEN 1 ELSE 0 END) OUT_COUNT,
         		MAX(CASE WHEN IN_OUT = 'OUT' AND ARGUMENT_NAME IS NULL THEN PLS_TYPE END) RETURN_PLS_TYPE
 			FROM SYS.ALL_ARGUMENTS 
@@ -953,7 +950,33 @@ IS
         )
         SELECT PACKAGE_NAME, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD,
             INITCAP(OBJECT_NAME) PROCEDURE_NAME, 
-            CASE WHEN p_Compact = 'Y' THEN 
+            CASE WHEN p_Compact = 'Y' and p_Logging_Start_Enabled = 'Y' THEN 
+                v_Condition_Start
+                || rpad(' ', p_Indent+4)
+                || 'EXECUTE IMMEDIATE api_trace.Dyn_Log_Start'
+                || case when OVERLOAD is not null then '(p_overload => ' || OVERLOAD || ')' end
+                || case when PARAM_LIST IS NOT NULL then 
+                	chr(10) 
+                	|| rpad(' ', p_Indent+4)
+                	|| 'USING '
+                	|| PARAM_LIST
+                end
+                || ';' 
+                || v_Condition_End
+                || chr(10) || '----' || chr(10) 
+                || v_Condition_Start
+            	|| rpad(' ', p_Indent+4)
+                || 'EXECUTE IMMEDIATE api_trace.Dyn_Log_Exit'
+                || case when OVERLOAD is not null then '(p_overload => ' || OVERLOAD || ')' end
+                || case when PARAM_LIST_OUT IS NOT NULL then 
+                	chr(10) 
+                	|| rpad(' ', p_Indent+4)
+                	|| 'USING '
+                	|| PARAM_LIST_OUT
+                end
+                || ';' 
+                || v_Condition_End
+			WHEN p_Compact = 'Y' and p_Logging_Start_Enabled = 'N' THEN 
                 v_Condition_Start
                 || rpad(' ', p_Indent+4)
                 || 'EXECUTE IMMEDIATE api_trace.Dyn_Log_Call'
@@ -966,7 +989,7 @@ IS
                 end
                 || ';' 
                 || v_Condition_End
-            WHEN p_Logging_Start_Enabled = 'Y' THEN 
+            WHEN p_Compact = 'N' and p_Logging_Start_Enabled = 'Y' THEN 
             	v_Condition_Start
             	|| rpad(' ', p_Indent+4)
                 || replace(apex_string.format(
@@ -1007,7 +1030,7 @@ IS
 					p_max_length=>32767
 				), chr(10), rpad(chr(10), p_Indent))
 				|| v_Condition_End
-            ELSE 
+            WHEN p_Compact = 'N' and p_Logging_Start_Enabled = 'N' THEN 
                 v_Condition_Start
             	|| rpad(' ', p_Indent+4)
                 || replace(apex_string.format(
@@ -1197,9 +1220,9 @@ IS
         p_Package_Name IN VARCHAR2,
         p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
         p_Logging_Start_Enabled VARCHAR2 DEFAULT 'N', --Y/N
-        p_Logging_Start_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,
-        p_Logging_Finish_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Finish_Call,
-        p_Logging_API_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,
+        p_Logging_Start_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Start_Call,
+        p_Logging_Finish_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Exit_Call,
+        p_Logging_API_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_API_Call,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result',
         p_value_max_length INTEGER DEFAULT 1000
     ) RETURN CLOB
@@ -1437,9 +1460,9 @@ IS
         p_Package_Name IN VARCHAR2,
         p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
         p_Logging_Start_Enabled VARCHAR2 DEFAULT 'N', --Y/N
-        p_Logging_Start_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,
-        p_Logging_Finish_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Finish_Call,
-        p_Logging_API_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,
+        p_Logging_Start_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Start_Call,
+        p_Logging_Finish_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Exit_Call,
+        p_Logging_API_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_API_Call,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result',
         p_Use_Dbms_Output BOOLEAN DEFAULT TRUE,
         p_Do_Execute BOOLEAN DEFAULT TRUE,
@@ -1632,9 +1655,9 @@ IS
     PROCEDURE Enable_APEX (
         p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
         p_Logging_Start_Enabled VARCHAR2 DEFAULT 'N', --Y/N
-        p_Logging_Start_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,
-        p_Logging_Finish_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Finish_Call,
-        p_Logging_API_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,
+        p_Logging_Start_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Start_Call,
+        p_Logging_Finish_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Exit_Call,
+        p_Logging_API_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_API_Call,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result',
         p_Use_Dbms_Output BOOLEAN DEFAULT TRUE,
         p_Do_Execute BOOLEAN DEFAULT TRUE
