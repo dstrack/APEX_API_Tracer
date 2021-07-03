@@ -26,7 +26,8 @@ For other packages where the above-mentioned conditions do not apply, you can ma
 
 Install the APEX application with supporting objects.
 
-Start the Application and use the Switch in the column 'Tracing is Enabled' to start and stop the tracing of a package. The app will list for some packages the grant statements that you have to execute as an admin. 
+Start the Application and use the Switch in the column 'Tracing is Enabled' to start and stop the tracing of a package. 
+The app will list for some packages the grant statements that you have to execute as an admin. 
 
 For some APEX APIs you have to grant access to the following objects:
 
@@ -36,9 +37,18 @@ GRANT EXECUTE ON APEX_<version>.WWV_FLOW_THEMES TO <schema_name>;
 
 GRANT EXECUTE ON APEX_<version>.WWV_FLOW_THEME_STYLES TO <schema_name>;
 
-Start an APEX application that you want to trace and execute a page with debugging enabled. The debug log will now contain entries that list the invocations with input and output parameters for the prepared packages.
+Start an APEX application that you want to trace and execute a page with debugging enabled. 
+The debug log will now contain entries that list the invocations with input and output parameters for the prepared packages.
 
-
+In the section 'Trace Code for LOCAL packages' 
+  you can list invocations to the package api_trace for your own local packages.
+  The switches 'Compact' and 'Logging of Procedure Start' control the code generation for your need.
+  Copy the listed code into your package to enable tracing of your procedures and functions.
+  The generated code uses the api_trace. Literal function to convert the passed values to quoted literals.
+  The function api_trace.Literal is overloaded to support many data types. Datatypes that can not be 
+  converted like records are logged with a <datatype> placeholder. The logged value is truncated to a maximum length.
+  The compact form of the generated code executed directly with the simple passing of the function arguments.
+  
 In an sql-worksheet or sqlplus
 Use the package_tracer.Enable procedure to start tracing of a package.
 
@@ -63,7 +73,10 @@ Use the package_tracer.Disable procedure to stop tracing of a package.
     execute drop statement for the local package 
     recreate the local synonym when no PUBLIC synonym exists.
 
-
+3. Dyn_Log_Call_List
+    For a given package_name generate invocations to the api_trace logging functions. 
+    The parameters p_Compact and p_Logging_Start_Enabled control the code generation for you needs.
+  
 For the publish-app-schema functionality you need the following privileges:
 GRANT CREATE ANY SYNONYM TO <schema_name>;
 GRANT DROP ANY SYNONYM TO <schema_name>;
