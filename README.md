@@ -1,4 +1,6 @@
-# APEX_API_Tracer enables the tracing of calls to package procedures or functions into the APEX Debug Log without manual programming.
+# Generate APEX_DEBUG Calls to Trace Parameter Values for whole packages
+
+APEX_API_Tracer enables the tracing of calls to package procedures or functions into the APEX Debug Log without manual programming.
 
 This program can generate a package for tracing automatically when the following conditions apply:
 
@@ -8,19 +10,23 @@ This program can generate a package for tracing automatically when the following
   4. the package defines no record or table types.
   5. the package header is not wrapped.
 
-The enable procedure will generate a package with the same name as the synonym in your local schema.
+The enable - procedure will generate a package with the same name as the synonym in your local schema.
 
 The link from your local applications to the synonym will be intercepted by the generated package.
 
 The package will contain the same functions and procedures as the original package.
 
-In each function and procedure exists 
+When the Option 'Logging of Procedure Start' is set to Yes, then each function and procedure consists of:  
 
-  1. A call to APEX_DEBUG.LOG_LONG_MESSAGE to produce log entries with text for valid PL/SQL procedure calls with enquoted parameters, that you can copy and paste into the sql console for testing.
-  2. A call to invocate the original procedure or functions.
-  3. A call to APEX_DEBUG.LOG_LONG_MESSAGE to produce log entries for the output values and return values of the invocation.
+ 1. A call to APEX_DEBUG.LOG_LOG_MESSAGE to produce log entries with text for valid PL/SQL procedure calls with enquoted parameters, that you can copy and paste into the sql console for testing. Arguments of type IN and IN/OUT are logged.
+ 2. A call to invocate the original procedure or functions.
+ 3. A call to APEX_DEBUG.LOG_LONG_MESSAGE to produce log entries for the output values and return values of the invocation. Arguments of type OUT and IN/OUT are logged.
+When the Option 'Logging of Procedure Start' is set to No, then each function and procedure consists of:  
 
-For other packages where the above-mentioned conditions do not apply, you can manually add invocations to the api_trace package to support logging for prepared functions or procedures in your own packages. When you 
+1. A call to invocate the original procedure or functions. 
+2. A call to APEX_DEBUG.LOG_LONG_MESSAGE to produce log entries for all argument values and function return values of the invocation. Arguments of type IN, OUT, and IN/OUT are logged.
+
+For other packages where the above-mentioned conditions do not apply, you can manually add generated code with invocations to the api_trace package to support logging for prepared functions or procedures in your own packages.
 
 # Usage
 
