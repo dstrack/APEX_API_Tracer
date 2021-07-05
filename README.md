@@ -71,7 +71,7 @@ Use the package_tracer.Enable procedure to start tracing of a package.
 Use the package_tracer.Disable procedure to stop tracing of a package.
 
 # What these procedures do:
-1. enable
+1. enable: 
     detect local packages with the same name that may be overwritten.
     support local synonyms. 
         local synonym is dropped before the package is created.
