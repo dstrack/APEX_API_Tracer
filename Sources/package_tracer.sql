@@ -940,6 +940,7 @@ IS
         	SELECT PACKAGE_NAME, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD,
         		INITCAP(PACKAGE_NAME) || '.' || INITCAP(OBJECT_NAME) CALLING_SUBPROG, 
         		LISTAGG(LOWER(ARGUMENT_NAME) , ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST,
+        		LISTAGG(CASE WHEN IN_OUT IN ('IN/OUT', 'IN') THEN LOWER(ARGUMENT_NAME) END, ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_IN,
         		LISTAGG(CASE WHEN IN_OUT IN ('IN/OUT', 'OUT') THEN LOWER(ARGUMENT_NAME) END, ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_OUT,
         		SUM(CASE WHEN IN_OUT IN ('IN/OUT', 'OUT') AND ARGUMENT_NAME IS NOT NULL THEN 1 ELSE 0 END) OUT_COUNT,
         		MAX(CASE WHEN IN_OUT = 'OUT' AND ARGUMENT_NAME IS NULL THEN PLS_TYPE END) RETURN_PLS_TYPE
@@ -955,11 +956,11 @@ IS
                 || rpad(' ', p_Indent+4)
                 || 'EXECUTE IMMEDIATE api_trace.Dyn_Log_Start'
                 || case when OVERLOAD is not null then '(p_overload => ' || OVERLOAD || ')' end
-                || case when PARAM_LIST IS NOT NULL then 
+                || case when PARAM_LIST_IN IS NOT NULL then -- ??
                 	chr(10) 
                 	|| rpad(' ', p_Indent+4)
                 	|| 'USING '
-                	|| PARAM_LIST
+                	|| PARAM_LIST_IN
                 end
                 || ';' 
                 || v_Condition_End

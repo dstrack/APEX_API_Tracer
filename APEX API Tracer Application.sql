@@ -27,7 +27,7 @@ prompt APPLICATION 103 - APEX API Tracer
 -- Application Export:
 --   Application:     103
 --   Name:            APEX API Tracer
---   Date and Time:   23:08 Saturday July 3, 2021
+--   Date and Time:   13:04 Monday July 5, 2021
 --   Exported By:     DIRK
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -105,7 +105,7 @@ wwv_flow_api.create_flow(
 ,p_public_user=>'APEX_PUBLIC_USER'
 ,p_proxy_server=>nvl(wwv_flow_application_install.get_proxy,'')
 ,p_no_proxy_domains=>nvl(wwv_flow_application_install.get_no_proxy_domains,'')
-,p_flow_version=>'Release 1.0.1'
+,p_flow_version=>'Release 1.0.2'
 ,p_flow_status=>'AVAILABLE_W_EDIT_LINK'
 ,p_flow_unavailable_text=>'This application is currently unavailable at this time.'
 ,p_exact_substitutions_only=>'Y'
@@ -118,7 +118,7 @@ wwv_flow_api.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'APEX API Tracer'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210703230826'
+,p_last_upd_yyyymmddhh24miss=>'20210705130351'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>9
 ,p_ui_type_name => null
@@ -11826,8 +11826,11 @@ wwv_flow_api.create_install_script(
 '    c_APEX_Logging_Start_Call  CONSTANT VARCHAR2(1000) := ''apex_debug.log_long_message(p_message=>''''API call: '''' || %s, p_level=>5);'';',
 '    c_APEX_Logging_Exit_Call CONSTANT VARCHAR2(1000) := ''apex_debug.log_long_message(p_message=>''''API exit: '''' || %s, p_level=>5);'';',
 '    c_APEX_Logging_API_Call    CONSTANT VARCHAR2(1000) := ''apex_debug.log_long_message(p_message=>''''API: '''' || %s, p_level=>5);'';',
+'    c_APEX_Logging_API_Exception CONSTANT VARCHAR2(1000) := ''apex_debug.log_long_message(p_message=>''''API Exception: '''' || %s, p_level=>5);'';',
+'    -- p_level=>4; -- default level if debugging is enabled (for example, used by apex_application.debug)',
+'    -- p_level=>5; -- application: messages when procedures/functions are entered',
+'    -- p_level=>6; -- application: other messages within procedures/functions',
 '    c_format_max_length CONSTANT NUMBER := 32700;',
-'    -- p_level=>5 -- application: messages when procedures/functions are entered',
 '	c_Package_Name             CONSTANT VARCHAR2(128) := lower($$plsql_unit);',
 '    FUNCTION Literal ( p_Text VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT 1000 )',
 '    RETURN VARCHAR2 DETERMINISTIC;',
@@ -11870,6 +11873,12 @@ wwv_flow_api.create_install_script(
 '        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- a format string that is passed to apex_string.format as p_message.',
 '        p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message',
 '        p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.',
+'    ) RETURN VARCHAR2;',
+'    FUNCTION Dyn_Log_Exception (',
+'        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- a format string that is passed to apex_string.format as p_message.',
+'        p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message',
+'        p_overload IN INTEGER DEFAULT 0,                             -- identifier of a overloded funtion in order of occurence.',
+'        p_format_error_function IN VARCHAR2 DEFAULT ''DBMS_UTILITY.FORMAT_ERROR_STACK'' -- function for formating for the current error. The output is concatinated to the message.',
 '    ) RETURN VARCHAR2;',
 'END api_trace;',
 '/',
@@ -12056,7 +12065,8 @@ wwv_flow_api.create_install_script(
 '            p_calling_subprog => c_calling_subprog,',
 '            p_value_max_length => p_value_max_length,',
 '            p_bind_char => '':'',',
-'            p_overload => p_overload',
+'            p_overload => p_overload,',
+'            p_in_out => ''IN/OUT''',
 '        );',
 '        if p_Logging_Call IS NOT NULL then ',
 '            return ''begin '' || apex_string.format(p_message=>p_Logging_Call, p0=>v_result_str, p_max_length=>c_format_max_length) || '' end;'';',
@@ -12110,6 +12120,31 @@ wwv_flow_api.create_install_script(
 '            return v_result_str;',
 '        end if;',
 '    END Dyn_Log_Exit; ',
+'    ',
+'    FUNCTION Dyn_Log_Exception (',
+'        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- a format string that is passed to apex_string.format as p_message.',
+'        p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message',
+'        p_overload IN INTEGER DEFAULT 0,                             -- identifier of a overloded funtion in order of occurence.',
+'        p_format_error_function IN VARCHAR2 DEFAULT ''DBMS_UTILITY.FORMAT_ERROR_STACK'' -- function for formating for the current error. The output is concatinated to the message.',
+'    ) RETURN VARCHAR2',
+'    IS',
+'        c_calling_subprog constant varchar2(512) := lower(utl_call_stack.concatenate_subprogram(utl_call_stack.subprogram(2))); ',
+'        v_result_str VARCHAR2(32767);',
+'    BEGIN',
+'        v_result_str := Format_Call_Parameter( ',
+'            p_calling_subprog => c_calling_subprog,',
+'            p_value_max_length => p_value_max_length,',
+'            p_bind_char => '':'',',
+'            p_overload => p_overload,',
+'            p_in_out => ''IN/OUT''',
+'        )',
+'        || '' || '' || p_format_error_function;',
+'        if p_Logging_Call IS NOT NULL then ',
+'            return ''begin '' || apex_string.format(p_message=>p_Logging_Call, p0=>v_result_str, p_max_length=>c_format_max_length) || '' end;'';',
+'        else',
+'            return v_result_str;',
+'        end if;',
+'    END Dyn_Log_Exception; ',
 'END api_trace;',
 '/',
 ''))
@@ -13075,6 +13110,7 @@ wwv_flow_api.append_to_install_script(
 '        	SELECT PACKAGE_NAME, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD,',
 '        		INITCAP(PACKAGE_NAME) || ''.'' || INITCAP(OBJECT_NAME) CALLING_SUBPROG, ',
 '        		LISTAGG(LOWER(ARGUMENT_NAME) , '','') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST,',
+'        		LISTAGG(CASE WHEN IN_OUT IN (''IN/OUT'', ''IN'') THEN LOWER(ARGUMENT_NAME) END, '','') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_IN,',
 '        		LISTAGG(CASE WHEN IN_OUT IN (''IN/OUT'', ''OUT'') THEN LOWER(ARGUMENT_NAME) END, '','') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_OUT,',
 '        		SUM(CASE WHEN IN_OUT IN (''IN/OUT'', ''OUT'') AND ARGUMENT_NAME IS NOT NULL THEN 1 ELSE 0 END) OUT_COUNT,',
 '        		MAX(CASE WHEN IN_OUT = ''OUT'' AND ARGUMENT_NAME IS NULL THEN PLS_TYPE END) RETURN_PLS_TYPE',
@@ -13090,11 +13126,11 @@ wwv_flow_api.append_to_install_script(
 '                || rpad('' '', p_Indent+4)',
 '                || ''EXECUTE IMMEDIATE api_trace.Dyn_Log_Start''',
 '                || case when OVERLOAD is not null then ''(p_overload => '' || OVERLOAD || '')'' end',
-'                || case when PARAM_LIST IS NOT NULL then ',
+'                || case when PARAM_LIST_IN IS NOT NULL then -- ??',
 '                	chr(10) ',
 '                	|| rpad('' '', p_Indent+4)',
 '                	|| ''USING ''',
-'                	|| PARAM_LIST',
+'                	|| PARAM_LIST_IN',
 '                end',
 '                || '';'' ',
 '                || v_Condition_End',
@@ -13531,10 +13567,7 @@ wwv_flow_api.append_to_install_script(
 '						p0 => Format_Call_Parameter( ',
 '							p_Object_Name => p_Object_Name,',
 '							p_Object_Owner => p_Object_Owner,',
-'							p_Procedure_Name => v_proc_tbl(ind).PROCEDURE_NAME,',
-'							p_Subprogram_ID => v_proc_tbl(ind).SUBPROGRAM_ID,',
-'							p_calling_subprog => v_calling_subprog,',
-'							p_'))
+'							p_Procedure_Nam'))
 );
 null;
 end;
@@ -13543,7 +13576,10 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(261939746109436819)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'synonym_name => v_procedure_name,',
+'e => v_proc_tbl(ind).PROCEDURE_NAME,',
+'							p_Subprogram_ID => v_proc_tbl(ind).SUBPROGRAM_ID,',
+'							p_calling_subprog => v_calling_subprog,',
+'							p_synonym_name => v_procedure_name,',
 '							p_value_max_length => p_value_max_length,',
 '							p_bind_char => null,',
 '							p_overload => v_proc_tbl(ind).OVERLOAD,',
