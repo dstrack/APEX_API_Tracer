@@ -10,7 +10,7 @@ This program can generate a package for tracing automatically when the following
   4. the package defines no record or table types.
   5. the package header is not wrapped.
 
-The enable - procedure will generate a proxy-package with the same name as the synonym in your local schema.
+The enable - procedure will generate a tracing-package with the same name as the synonym in your local schema.
 
 The link from your local applications to the synonym will be intercepted by the generated package.
 
