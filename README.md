@@ -21,6 +21,7 @@ When the Option 'Logging of Procedure Start' is set to Yes, then each function a
  1. A call to APEX_DEBUG.LOG_LOG_MESSAGE to produce log entries with text for valid PL/SQL procedure calls with enquoted parameters, that you can copy and paste into the sql console for testing. Arguments of type IN and IN/OUT are logged.
  2. A call to invocate the original procedure or functions.
  3. A call to APEX_DEBUG.LOG_LONG_MESSAGE to produce log entries for the output values and return values of the invocation. Arguments of type OUT and IN/OUT are logged.
+
 When the Option 'Logging of Procedure Start' is set to No, then each function and procedure consists of:  
 
 1. A call to invocate the original procedure or functions. 
