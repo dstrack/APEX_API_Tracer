@@ -89,7 +89,7 @@ Use the package_tracer.Disable procedure to stop tracing of a package.
     execute drop statement for the local package 
     recreate the local synonym when no PUBLIC synonym exists.
 
-3. Dyn_Log_Call_List
+3. Dyn_Log_Call_List:
     For a given package_name generate invocations to the api_trace logging functions. 
     The parameters p_Compact and p_Logging_Start_Enabled control the code generation for you needs.
   
