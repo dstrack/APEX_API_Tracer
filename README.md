@@ -51,9 +51,9 @@ In the section 'Trace Code for LOCAL packages'
   you can list invocations to the package api_trace for your own local packages.
   The switches 'Compact' and 'Logging of Procedure Start' control the code generation for your need.
   Copy the listed code into your package to enable tracing of your procedures and functions.
-  The generated code uses the api_trace. Literal function to convert the passed values to quoted literals.
+  The generated code uses the api_trace.Literal function to convert the passed values to quoted literals.
   The function api_trace.Literal is overloaded to support many data types. Datatypes that can not be 
-  converted like records are logged with a <datatype x> placeholder. The logged values are truncated to a maximum length.
+  converted like records are logged with a <datatype x> placeholder. The logged values are truncated to a maximum length (1024 by default).
   There is no upper limit for the number of arguments the you can pass the the api_trace logging functions.
   The compact form of the generated code executed directly with the simple passing of the function arguments list.
   The number of arguments will be checked at runtime to match the count of arguments of the current calling function.
@@ -61,7 +61,7 @@ In the section 'Trace Code for LOCAL packages'
 In the section 'Publish Application Objects in other Schema' 
   you can produce a copy of a schema.
   The target schema name should be a new empty schema, that was created in the APEX Admin / Workspace to Schema Assignment page.
-  In the copy tables and views are present as views that access the original tables and views.
+  In the copied schema, tables and views are present as views that access the original tables and views.
   Other objects like packages, functions, procedures, and types are represented as synonyms.
   An application that can run in the original schema will be able to run in the copied schema too.
   
