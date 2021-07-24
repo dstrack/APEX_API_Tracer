@@ -4,9 +4,8 @@ This program can generate a package for tracing automatically when the following
 
   1. the package is accessible to the schema user via a synonym.
   2. the procedure or function is listed in the package header.
-  3. there are no pipelined functions in the package.
-  4. the package defines no record or table types.
-  5. the package header is not wrapped
+  3. the package defines no record or table types.
+  4. the package header is not wrapped.
 
 The enable procedure will generate a package with the same name as the synonym in your local schema.
 
@@ -61,18 +60,18 @@ GRANT DROP ANY VIEW TO <schema_name>;
 CREATE OR REPLACE PACKAGE package_tracer
 AUTHID CURRENT_USER 
 IS
-	c_APEX_Condition_Start     CONSTANT VARCHAR2(1000) := 'if apex_application.g_debug then';
-	c_APEX_Condition_End       CONSTANT VARCHAR2(1000) := 'end if;';
-	c_Package_Name             CONSTANT VARCHAR2(128) := lower($$plsql_unit);
-    g_debug 				   CONSTANT BOOLEAN := FALSE;
+    c_APEX_Condition_Start     CONSTANT VARCHAR2(1000) := 'if apex_application.g_debug then';
+    c_APEX_Condition_End       CONSTANT VARCHAR2(1000) := 'end if;';
+    c_Package_Name             CONSTANT VARCHAR2(128) := lower($$plsql_unit);
+    g_debug                    CONSTANT BOOLEAN := FALSE;
     
     TYPE rec_logging_calls IS RECORD (
-        Package_Name 	SYS.ALL_ARGUMENTS.PACKAGE_NAME%TYPE, 
-        Object_Name 	SYS.ALL_ARGUMENTS.OBJECT_NAME%TYPE, 
-        Subprogram_Id 	SYS.ALL_ARGUMENTS.SUBPROGRAM_ID%TYPE, 
-        Overload 		SYS.ALL_ARGUMENTS.OVERLOAD%TYPE,
-        Procedure_Name 	VARCHAR2(512),
-        Logging_Call 	VARCHAR2(32767)
+        Package_Name    SYS.ALL_ARGUMENTS.PACKAGE_NAME%TYPE, 
+        Object_Name     SYS.ALL_ARGUMENTS.OBJECT_NAME%TYPE, 
+        Subprogram_Id   SYS.ALL_ARGUMENTS.SUBPROGRAM_ID%TYPE, 
+        Overload        SYS.ALL_ARGUMENTS.OVERLOAD%TYPE,
+        Procedure_Name  VARCHAR2(512),
+        Logging_Call    VARCHAR2(32767)
     );
     TYPE tab_logging_calls IS TABLE OF rec_logging_calls;
     
@@ -105,14 +104,23 @@ IS
         Package_Owner   VARCHAR2(128),
         Package_Name    VARCHAR2(128),
         Is_Enabled_Switch VARCHAR2(32767),
-        Is_Enabled 		VARCHAR2(1),
-		Grant_Stats		VARCHAR2(32767),
-		Synonym_Stats	VARCHAR2(32767),
-		Error_Count		NUMBER
+        Is_Enabled      VARCHAR2(1),
+        Grant_Stats     VARCHAR2(32767),
+        Revoke_Stats    VARCHAR2(32767),
+        Synonym_Stats   VARCHAR2(32767),
+        Error_Count     NUMBER
     );
     TYPE tab_Packages_Control IS TABLE OF rec_Packages_Control;
-    TYPE cur_Packages_Control IS REF CURSOR RETURN rec_Packages_Control;
     
+    FUNCTION in_list(
+        p_string in clob,
+        p_delimiter in varchar2 DEFAULT ';'
+    )
+    RETURN sys.odciVarchar2List PIPELINED DETERMINISTIC;
+
+    FUNCTION Enquote_Name ( p_Text VARCHAR2 )
+    RETURN VARCHAR2 DETERMINISTIC;
+
     FUNCTION get_Packages_Control_List (
         p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')    
     )
@@ -121,32 +129,36 @@ IS
     FUNCTION get_APEX_Control_List 
     RETURN tab_Packages_Control PIPELINED;
 
-	TYPE rec_publish_schema IS RECORD (
-		OWNER   		VARCHAR2(128),
-		OBJECT_NAME   	VARCHAR2(128), 
-		OBJECT_TYPE   	VARCHAR2(128), 
-		DEST_OBJECT_TYPE VARCHAR2(128),
-		FOREIGN_DEPS_CNT		NUMBER,
-		DEST_OBJECT_EXISTS VARCHAR2(3),
-		CONFLICTING_OBJECT_EXISTS  VARCHAR2(3),
-		DEST_SCHEMA		VARCHAR2(128),
-		GRANT_STAT 		VARCHAR2(4000), 
-		CREATE_STAT 	VARCHAR2(4000), 
-		REVOKE_STAT 	VARCHAR2(4000), 
-		DROP_STAT 		VARCHAR2(4000),
-		IS_ENABLED_SWITCH VARCHAR2(4000)
-	);
+    TYPE rec_publish_schema IS RECORD (
+        OWNER           VARCHAR2(128),
+        OBJECT_NAME     VARCHAR2(128), 
+        OBJECT_TYPE     VARCHAR2(128), 
+        DEST_OBJECT_TYPE VARCHAR2(128),
+        FOREIGN_DEPS_CNT        NUMBER,
+        DEST_OBJECT_EXISTS VARCHAR2(3),
+        CONFLICTING_OBJECT_EXISTS  VARCHAR2(3),
+        DEST_SCHEMA     VARCHAR2(128),
+        GRANT_STAT      VARCHAR2(4000), 
+        CREATE_STAT     VARCHAR2(4000), 
+        REVOKE_STAT     VARCHAR2(4000), 
+        DROP_STAT       VARCHAR2(4000),
+        IS_ENABLED_SWITCH VARCHAR2(32767)
+    );
     TYPE tab_publish_schema IS TABLE OF rec_publish_schema;
 
     FUNCTION get_publish_schema (
-    	p_Target_Schema IN VARCHAR2 
+        p_Target_Schema IN VARCHAR2 
     )
     RETURN tab_publish_schema PIPELINED;
 
-	PROCEDURE Copy_View (
-		p_View_Name IN VARCHAR2,
-		p_Dest_Schema IN VARCHAR2 
-	);
+    PROCEDURE Copy_View (
+        p_View_Name IN VARCHAR2,
+        p_Dest_Schema IN VARCHAR2 
+    );
+
+    FUNCTION Is_Printable_Type (
+        p_PLS_Type IN VARCHAR2
+    ) RETURN VARCHAR2 DETERMINISTIC;
 
     FUNCTION Format_Call_Parameter(
         p_Object_Name IN VARCHAR2,
@@ -161,10 +173,11 @@ IS
         p_in_out VARCHAR2 DEFAULT 'IN/OUT' -- IN, OUT, IN/OUT
     ) RETURN VARCHAR2;
 
-	FUNCTION Format_Return_Value (
-		p_Procedure_Name IN VARCHAR2,
-		p_PLS_Type IN VARCHAR2,
-		p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result'
+    FUNCTION Format_Return_Value (
+        p_Procedure_Name IN VARCHAR2,
+        p_PLS_Type IN VARCHAR2,
+        p_Data_Type IN VARCHAR2 DEFAULT NULL,
+        p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result'
     ) RETURN VARCHAR2;
 
     -- helper query for listing the procedures with parameters of a package
@@ -179,6 +192,7 @@ IS
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result',
         p_Condition_Start IN VARCHAR2 DEFAULT c_APEX_Condition_Start,
         p_Condition_End IN VARCHAR2 DEFAULT c_APEX_Condition_End,
+        p_Condition_Enabled VARCHAR2 DEFAULT 'N', --Y/N
         p_Indent IN NUMBER DEFAULT 8
     ) RETURN tab_logging_calls PIPELINED;
 
@@ -236,29 +250,77 @@ END package_tracer;
 
 CREATE OR REPLACE PACKAGE BODY package_tracer
 IS
-    c_Quote CONSTANT VARCHAR2(1) := chr(39);	-- Quote Character
-	c_DQuote CONSTANT VARCHAR2(1) := chr(34);	-- Double Quote Character
-	
+    c_Quote CONSTANT VARCHAR2(1) := chr(39);    -- Quote Character
+    c_DQuote CONSTANT VARCHAR2(1) := chr(34);   -- Double Quote Character
+    
+    FUNCTION in_list(
+        p_string in clob,
+        p_delimiter in varchar2 DEFAULT ';'
+    )
+    RETURN sys.odciVarchar2List PIPELINED DETERMINISTIC
+    IS
+        $IF DBMS_DB_VERSION.VERSION >= 12 $THEN
+            PRAGMA UDF;
+        $END
+        l_string    varchar2(32767);
+        n           number          := length(p_string);
+        p           number          := 1;
+        l_dlen      constant number := length(p_delimiter);
+        l_limit     constant number := 4000;
+        l_Trim_Set  constant varchar2(50)  := chr(9)||chr(10)||chr(13)||chr(32);
+    begin
+        if p_string IS NOT NULL then
+            loop
+                exit when n = 0;
+                n := DBMS_LOB.INSTR( p_string, p_delimiter, p );
+                l_string := case when n >= p
+                    then DBMS_LOB.SUBSTR( p_string, least(n-p, l_limit), p )
+                    else DBMS_LOB.SUBSTR( p_string, l_limit, p )
+                    end;
+                pipe row( ltrim( rtrim( l_string, l_Trim_Set ), l_Trim_Set ) );
+                p := n + l_dlen;
+            end loop;
+        end if;
+        return ;
+    END in_list;
+
+    FUNCTION Enquote_Name ( p_Text VARCHAR2 )
+    RETURN VARCHAR2 DETERMINISTIC
+    IS
+        $IF DBMS_DB_VERSION.VERSION >= 12 $THEN
+            PRAGMA UDF;
+        $END
+    BEGIN
+        RETURN c_DQuote || REPLACE(UPPER(p_Text), c_DQuote) || c_DQuote ;
+    END Enquote_Name;
+
+    FUNCTION Enquote_Literal ( p_Text VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    RETURN VARCHAR2 DETERMINISTIC
+    IS
+    BEGIN
+        RETURN c_Quote || REPLACE(SUBSTR(p_Text, 1, p_value_max_length), c_Quote, c_Quote||c_Quote) || c_Quote ;
+    END Enquote_Literal;
+    
     FUNCTION get_APEX_Packages_List 
     RETURN tab_synonyms PIPELINED
     IS 
         c_APEX_Packages CONSTANT VARCHAR2(2000) := 
-        'APEX_ACL,APEX_APPLICATION_INSTALL,APEX_APP_SETTING,APEX_AUTHENTICATION,APEX_'
-        || 'AUTHORIZATION,APEX_COLLECTION,APEX_CSS,APEX_CUSTOM_AUTH,'
+        'APEX_ACL,APEX_APPLICATION_INSTALL,APEX_APP_SETTING,APEX_AUTHENTICATION,'
+        || 'APEX_AUTHORIZATION,APEX_COLLECTION,APEX_CREDENTIAL,APEX_CSS,APEX_CUSTOM_AUTH,'
         || 'APEX_ESCAPE,APEX_EXPORT,APEX_ITEM,'
-        || 'APEX_JAVASCRIPT,APEX_LANG,APEX_MAIL,APEX_PAGE,APEX_PKG_APP_INSTALL,'
-        || 'APEX_REGION,APEX_SESSION,APEX_SPATIAL,APEX_THEME,'
+        || 'APEX_JAVASCRIPT,APEX_LANG,APEX_LDAP,APEX_MAIL,APEX_PAGE,APEX_PKG_APP_INSTALL,'
+        || 'APEX_REGION,APEX_SESSION,APEX_SPATIAL,APEX_STRING,APEX_THEME,'
         || 'APEX_UI_DEFAULT_UPDATE,APEX_UTIL,APEX_WEB_SERVICE';
     begin   
         for cur in (
             select 
-            	SYN.OWNER 			Synonym_Owner, 
-            	SYN.SYNONYM_NAME 	Synonym_Name,
-            	SYN.TABLE_OWNER 	Package_Owner,
-            	SYN.TABLE_NAME 		Package_Name
+                SYN.OWNER           Synonym_Owner, 
+                SYN.SYNONYM_NAME    Synonym_Name,
+                SYN.TABLE_OWNER     Package_Owner,
+                SYN.TABLE_NAME      Package_Name
             from SYS.All_Synonyms SYN
             where SYN.SYNONYM_NAME IN (
-            	SELECT column_value FROM TABLE(apex_string.split(c_APEX_Packages, ','))
+                SELECT column_value FROM TABLE(in_list(c_APEX_Packages, ','))
             )
             and SYN.OWNER = 'PUBLIC'
             order by Syn.synonym_Name
@@ -274,11 +336,11 @@ IS
     IS 
     begin   
         for cur in (
-        	select
-            	SYN.OWNER 			Synonym_Owner, 
-            	SYN.SYNONYM_NAME 	Synonym_Name,
-            	SYN.TABLE_OWNER 	Package_Owner,
-            	SYN.TABLE_NAME 		Package_Name
+            select
+                SYN.OWNER           Synonym_Owner, 
+                SYN.SYNONYM_NAME    Synonym_Name,
+                SYN.TABLE_OWNER     Package_Owner,
+                SYN.TABLE_NAME      Package_Name
             from SYS.All_Synonyms SYN
             join SYS.All_Objects OBJ on SYN.TABLE_NAME = OBJ.OBJECT_NAME and SYN.TABLE_OWNER = OBJ.OWNER
             where Syn.OWNER IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') )
@@ -299,15 +361,6 @@ IS
                 and PRO.OBJECT_TYPE = 'PACKAGE'
                 and PRO.PROCEDURE_NAME IS NOT NULL
             )
-            and not exists ( -- package has no PIPELINED functions
-                select 1 
-                from SYS.ALL_PROCEDURES PRO
-                where PRO.OWNER = SYN.TABLE_OWNER
-                and PRO.OBJECT_NAME = SYN.TABLE_NAME
-                and PRO.OBJECT_TYPE = 'PACKAGE'
-                and (PRO.PIPELINED = 'YES'
-                 or PRO.AGGREGATE  = 'YES')
-            )
             and not exists ( -- package is not wrapped
                 SELECT 1 
                 FROM SYS.All_Source SRC 
@@ -317,10 +370,10 @@ IS
                 and REGEXP_INSTR(SRC.text, '\s+wrapped\s+', 1, 1, 0, 'i') > 0
                 and line = 1
             )
-            and SYN.SYNONYM_NAME NOT IN ('APEX_DEBUG', 'APEX_STRING', -- because package_tracer is dependent on this synonyms
+            and SYN.SYNONYM_NAME NOT IN ('APEX_DEBUG', -- because package_tracer is dependent on this synonyms
                 'DBMS_DIMENSION', -- PLS-00307: Zu viele Deklarationen von 'VALIDATE_DIMENSION' entsprechen diesem Aufruf
                 'DBMS_SODA_USER_ADMIN', -- PLS-00201
-                'APEX_PLUGIN',
+                -- 'APEX_PLUGIN',
                 'APEX_INSTANCE_ADMIN',
                 'APEX_INSTANCE_REST_ADMIN',
                 'API_TRACE'
@@ -339,95 +392,105 @@ IS
     IS 
     begin   
         for cur in (
-			WITH DEPS AS (
-				SELECT Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME,
-					LISTAGG(DEP.GRANT_STAT, '; ') WITHIN GROUP (ORDER BY GRANT_STAT) GRANT_STATS,
-					LISTAGG(DEP.SYNONYM_STAT, '; ') WITHIN GROUP (ORDER BY SYNONYM_STAT) SYNONYM_STATS
-				FROM table(get_Packages_List) SYN
-				LEFT OUTER JOIN (
-					SELECT DA.Owner Object_Owner, DA.Name Object_Name,
-						case when Pri.Privilege IS NULL and DA.referenced_Owner != 'PUBLIC' then 
-							'GRANT EXECUTE ON '
-							|| DA.referenced_Owner || '.' || DA.referenced_Name 
-							|| ' TO ' || p_Dest_Schema 
-						end GRANT_STAT,
-						case when SYN.OWNER IS NULL AND DB.REFERENCED_OWNER IS NULL then 
-							'CREATE OR REPLACE SYNONYM ' || p_Dest_Schema || '.' || DA.referenced_Name
-							|| ' FOR ' || DA.referenced_Owner || '.' || DA.referenced_Name 
-						end SYNONYM_STAT,
-						PRI.Grantable,
-						PRI.Privilege,
-						SYN.OWNER SYNONYM_OWNER
-					FROM SYS.ALL_DEPENDENCIES DA
-					LEFT OUTER JOIN SYS.ALL_SYNONYMS SYN 
-						ON SYN.OWNER IN (p_Dest_Schema, 'PUBLIC')
-						AND Syn.Synonym_Name = DA.referenced_Name
-					LEFT OUTER JOIN SYS.ALL_TAB_PRIVS PRI 
-						ON Pri.table_Schema = DA.referenced_Owner 
-						AND Pri.table_Name = DA.referenced_Name
-						AND Pri.type = DA.referenced_Type
-						AND PRI.Grantee IN (p_Dest_Schema, 'PUBLIC')
-						AND PRI.privilege IN ('EXECUTE', 'SELECT')
-			        LEFT OUTER JOIN ( -- no VIEW OR SYNONYM with this name already exists
-						SELECT DB.REFERENCED_NAME, DB.REFERENCED_OWNER
-						FROM SYS.ALL_DEPENDENCIES DB 
-						WHERE DB.OWNER = p_Dest_Schema
-						AND DB.NAME = DB.REFERENCED_NAME
-					) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER
-					WHERE (SYN.OWNER IS NULL or Pri.Privilege IS NULL)
-					AND NOT(DA.referenced_Owner = 'SYS' AND DA.referenced_Name = 'STANDARD')
-				) DEP ON DEP.Object_Owner = SYN.PACKAGE_OWNER AND DEP.Object_Name = SYN.PACKAGE_NAME
-				GROUP BY Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME
-			)
-			SELECT SYNONYM_NAME, PACKAGE_OWNER, PACKAGE_NAME,
-				APEX_ITEM.HIDDEN (p_idx => 1, p_value => SYNONYM_NAME, p_item_id => 'f01_'||ROWNUM, p_item_label => 'ROW_SELECTOR$') ||
-				APEX_ITEM.SWITCH (p_idx => 2, 
-				  p_value => IS_ENABLED, 
-				  p_item_id => 'f02_'||ROWNUM, p_item_label => 'SWITCH_ENABLED') 
-				|| APEX_ITEM.HIDDEN (p_idx => 3, p_value => IS_ENABLED, p_item_id => 'f03_' || ROWNUM , p_item_label => 'IS_ENABLED') IS_ENABLED_SWITCH,
-				IS_ENABLED,
-				GRANT_STATS,
-				SYNONYM_STATS,
-				ERROR_COUNT
-			FROM ( 
-				SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME,
-					CASE WHEN EXISTS (
-						SELECT 1 
-						FROM SYS.USER_OBJECTS OBJ
-						WHERE OBJ.OBJECT_NAME = D.SYNONYM_NAME
-						AND OBJECT_TYPE = 'PACKAGE'
-					) THEN 'Y' ELSE 'N' END IS_ENABLED,
-					case when GRANT_STATS is not null then GRANT_STATS||';' end GRANT_STATS,
-					case when SYNONYM_STATS is not null then SYNONYM_STATS||';' end SYNONYM_STATS,
-					(SELECT COUNT(*) 
-					 FROM SYS.USER_ERRORS ERR
-					 WHERE ERR.NAME = D.SYNONYM_NAME
-					 AND ERR.TYPE LIKE 'PACKAGE%'
-					) ERROR_COUNT
-				FROM DEPS D
-				UNION ALL -- enabled loacale packages
-				SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME, 'Y' IS_ENABLED,
-					NULL GRANT_STATS, 
-					'CREATE OR REPLACE ' || SYNONYM_STATS || ';' SYNONYM_STATS,
-					(SELECT COUNT(*) 
-					 FROM SYS.USER_ERRORS ERR
-					 WHERE ERR.NAME = D.SYNONYM_NAME
-					 AND ERR.TYPE LIKE 'PACKAGE%'
-					) ERROR_COUNT
-				FROM (
-					SELECT DEP.NAME SYNONYM_NAME, 
-							DEP.REFERENCED_NAME PACKAGE_NAME,
-							DEP.REFERENCED_OWNER PACKAGE_OWNER,
-							package_tracer.Get_Package_Synonym_Text(DEP.REFERENCED_NAME) SYNONYM_STATS
-					FROM SYS.USER_DEPENDENCIES DEP
-					where DEP.TYPE = 'PACKAGE BODY'
-					and DEP.REFERENCED_TYPE = 'PACKAGE'
-					and DEP.REFERENCED_NAME = DEP.NAME
-					and DEP.REFERENCED_OWNER != p_Dest_Schema
-				) D
-				WHERE SYNONYM_STATS IS NOT NULL
-			) MAIN
-			order by 1
+            WITH DEPS AS (
+                SELECT Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME,
+                    LISTAGG(DEP.GRANT_STAT, '; ') WITHIN GROUP (ORDER BY GRANT_STAT) GRANT_STATS,
+                    LISTAGG(DEP.REVOKE_STAT, '; ') WITHIN GROUP (ORDER BY REVOKE_STAT) REVOKE_STATS,
+                    LISTAGG(DEP.SYNONYM_STAT, '; ') WITHIN GROUP (ORDER BY SYNONYM_STAT) SYNONYM_STATS
+                FROM table(get_Packages_List) SYN
+                LEFT OUTER JOIN (
+                    SELECT DA.Owner Object_Owner, DA.Name Object_Name,
+                        case when PRI.Privilege IS NULL and DA.referenced_Owner != 'PUBLIC' then 
+                            'GRANT ' || case when OBJ.OBJECT_TYPE IN ('TABLE', 'VIEW') then 'SELECT' else 'EXECUTE' end 
+                            || ' ON ' || DA.referenced_Owner || '.' || DA.referenced_Name 
+                            || ' TO ' || p_Dest_Schema  
+                        end GRANT_STAT,
+                        case when PRI.Privilege IS NOT NULL and PRI.Grantee = p_Dest_Schema then 
+                            'REVOKE ' || PRI.Privilege
+                            || ' ON ' || DA.referenced_Owner || '.' || DA.referenced_Name 
+                            || ' FROM ' || p_Dest_Schema 
+                        end REVOKE_STAT,
+                        case when SYN.OWNER IS NULL AND DB.REFERENCED_OWNER IS NULL then 
+                            'CREATE OR REPLACE SYNONYM ' || p_Dest_Schema || '.' || DA.referenced_Name
+                            || ' FOR ' || DA.referenced_Owner || '.' || DA.referenced_Name 
+                        end SYNONYM_STAT,
+                        PRI.Grantable,
+                        PRI.Privilege,
+                        SYN.OWNER SYNONYM_OWNER
+                    FROM SYS.ALL_DEPENDENCIES DA
+                    LEFT OUTER JOIN SYS.ALL_SYNONYMS SYN 
+                        ON SYN.OWNER IN (p_Dest_Schema, 'PUBLIC')
+                        AND Syn.Synonym_Name = DA.referenced_Name
+                    LEFT OUTER JOIN SYS.ALL_TAB_PRIVS PRI 
+                        ON Pri.table_Schema = DA.referenced_Owner 
+                        AND Pri.table_Name = DA.referenced_Name
+                        AND Pri.type = DA.referenced_Type
+                        AND PRI.Grantee IN (p_Dest_Schema, 'PUBLIC')
+                        AND PRI.privilege IN ('EXECUTE', 'SELECT')
+                    LEFT OUTER JOIN ( -- no VIEW OR SYNONYM with this name already exists
+                        SELECT DB.REFERENCED_NAME, DB.REFERENCED_OWNER
+                        FROM SYS.ALL_DEPENDENCIES DB 
+                        WHERE DB.OWNER = p_Dest_Schema
+                        AND DB.NAME = DB.REFERENCED_NAME
+                    ) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER
+                    LEFT OUTER JOIN SYS.ALL_OBJECTS OBJ ON OBJ.OWNER = DA.OWNER and OBJ.OBJECT_NAME = DA.REFERENCED_NAME
+                    WHERE (SYN.OWNER IS NULL or Pri.Privilege IS NULL)
+                    AND NOT(DA.referenced_Owner = 'SYS' AND DA.referenced_Name = 'STANDARD')
+                ) DEP ON DEP.Object_Owner = SYN.PACKAGE_OWNER AND DEP.Object_Name = SYN.PACKAGE_NAME
+                GROUP BY Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME
+            )
+            SELECT SYNONYM_NAME, PACKAGE_OWNER, PACKAGE_NAME,
+                APEX_ITEM.HIDDEN (p_idx => 1, p_value => SYNONYM_NAME, p_item_id => 'f01_'||ROWNUM, p_item_label => 'ROW_SELECTOR$') ||
+                APEX_ITEM.SWITCH (p_idx => 2, 
+                  p_value => IS_ENABLED, 
+                  p_item_id => 'f02_'||ROWNUM, p_item_label => 'SWITCH_ENABLED') 
+                || APEX_ITEM.HIDDEN (p_idx => 3, p_value => IS_ENABLED, p_item_id => 'f03_' || ROWNUM , p_item_label => 'IS_ENABLED') IS_ENABLED_SWITCH,
+                IS_ENABLED,
+                GRANT_STATS,
+                REVOKE_STATS, 
+                SYNONYM_STATS,
+                ERROR_COUNT
+            FROM ( 
+                SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME,
+                    CASE WHEN EXISTS (
+                        SELECT 1 
+                        FROM SYS.USER_OBJECTS OBJ
+                        WHERE OBJ.OBJECT_NAME = D.SYNONYM_NAME
+                        AND OBJECT_TYPE = 'PACKAGE'
+                    ) THEN 'Y' ELSE 'N' END IS_ENABLED,
+                    case when GRANT_STATS is not null then GRANT_STATS||';' end GRANT_STATS,
+                    case when REVOKE_STATS is not null then REVOKE_STATS||';' end REVOKE_STATS,
+                    case when SYNONYM_STATS is not null then SYNONYM_STATS||';' end SYNONYM_STATS,
+                    (SELECT COUNT(*) 
+                     FROM SYS.USER_ERRORS ERR
+                     WHERE ERR.NAME = D.SYNONYM_NAME
+                     AND ERR.TYPE LIKE 'PACKAGE%'
+                    ) ERROR_COUNT
+                FROM DEPS D
+                UNION ALL -- enabled loacale packages
+                SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME, 'Y' IS_ENABLED,
+                    NULL GRANT_STATS, 
+                    NULL REVOKE_STATS, 
+                    'CREATE OR REPLACE ' || SYNONYM_STATS || ';' SYNONYM_STATS,
+                    (SELECT COUNT(*) 
+                     FROM SYS.USER_ERRORS ERR
+                     WHERE ERR.NAME = D.SYNONYM_NAME
+                     AND ERR.TYPE LIKE 'PACKAGE%'
+                    ) ERROR_COUNT
+                FROM (
+                    SELECT DEP.NAME SYNONYM_NAME, 
+                            DEP.REFERENCED_NAME PACKAGE_NAME,
+                            DEP.REFERENCED_OWNER PACKAGE_OWNER,
+                            package_tracer.Get_Package_Synonym_Text(DEP.REFERENCED_NAME) SYNONYM_STATS
+                    FROM SYS.USER_DEPENDENCIES DEP
+                    where DEP.TYPE = 'PACKAGE BODY'
+                    and DEP.REFERENCED_TYPE = 'PACKAGE'
+                    and DEP.REFERENCED_NAME = DEP.NAME
+                    and DEP.REFERENCED_OWNER != p_Dest_Schema
+                ) D
+                WHERE SYNONYM_STATS IS NOT NULL
+            ) MAIN
+            order by 1
         ) loop 
             pipe row (cur);
         end loop;
@@ -437,76 +500,86 @@ IS
     FUNCTION get_APEX_Control_List 
     RETURN tab_Packages_Control PIPELINED
     IS 
+    	v_Dest_Schema CONSTANT VARCHAR2(128) := SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA');
     begin   
         for cur in (
-			WITH DEPS AS (
-				SELECT Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME,
-					LISTAGG(DEP.GRANT_STAT, '; ') WITHIN GROUP (ORDER BY GRANT_STAT) GRANT_STATS,
-					LISTAGG(DEP.SYNONYM_STAT, '; ') WITHIN GROUP (ORDER BY SYNONYM_STAT) SYNONYM_STATS
-				FROM table(get_APEX_Packages_List) SYN
-				LEFT OUTER JOIN (
-					SELECT DA.Owner Object_Owner, DA.Name Object_Name,
-						case when Pri.Privilege IS NULL and DA.referenced_Owner != 'PUBLIC' then 
-							'GRANT EXECUTE ON '
-							|| DA.referenced_Owner || '.' || DA.referenced_Name 
-							|| ' TO ' || SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') 
-						end GRANT_STAT,
-						case when Syn.Owner IS NULL AND DB.REFERENCED_OWNER IS NULL then 
-							'CREATE OR REPLACE SYNONYM ' || SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') || '.' || DA.referenced_Name
-							|| ' FOR ' || DA.referenced_Owner || '.' || DA.referenced_Name 
-						end SYNONYM_STAT,
-						PRI.Grantable,
-						PRI.Privilege,
-						SYN.OWNER SYNONYM_OWNER
-					FROM SYS.ALL_DEPENDENCIES DA
-					LEFT OUTER JOIN SYS.ALL_SYNONYMS SYN 
-						ON SYN.OWNER IN (SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'), 'PUBLIC')
-						AND Syn.Synonym_Name = DA.referenced_Name
-					LEFT OUTER JOIN SYS.ALL_TAB_PRIVS PRI 
-						ON Pri.table_Schema = DA.referenced_Owner 
-						AND Pri.table_Name = DA.referenced_Name
-						AND Pri.type = DA.referenced_Type
-						AND PRI.Grantee IN (SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'), 'PUBLIC')
-						AND PRI.privilege IN ('EXECUTE', 'SELECT')
-			        LEFT OUTER JOIN ( -- no VIEW OR SYNONYM with this name already exists
-						SELECT DB.REFERENCED_NAME, DB.REFERENCED_OWNER
-						FROM SYS.ALL_DEPENDENCIES DB
-						WHERE DB.OWNER = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
-						AND DB.NAME = DB.REFERENCED_NAME
-					) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER
-					WHERE (SYN.OWNER IS NULL OR PRI.PRIVILEGE IS NULL)
-					AND NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME = 'STANDARD')
-				) DEP ON DEP.Object_Owner = SYN.PACKAGE_OWNER AND DEP.Object_Name = SYN.PACKAGE_NAME
-				GROUP BY SYN.SYNONYM_NAME, SYN.PACKAGE_OWNER, SYN.PACKAGE_NAME
-			)
-			SELECT SYNONYM_NAME, PACKAGE_OWNER, PACKAGE_NAME,
-				APEX_ITEM.HIDDEN (p_idx => 1, p_value => SYNONYM_NAME, p_item_id => 'f01_'||ROWNUM, p_item_label => 'ROW_SELECTOR$') ||
-				APEX_ITEM.SWITCH (p_idx => 2, 
-				  p_value => IS_ENABLED, 
-				  p_item_id => 'f02_'||ROWNUM, p_item_label => 'SWITCH_ENABLED') 
-				|| APEX_ITEM.HIDDEN (p_idx => 3, p_value => IS_ENABLED, p_item_id => 'f03_' || ROWNUM , p_item_label => 'IS_ENABLED') IS_ENABLED_SWITCH,
-				IS_ENABLED,
-				GRANT_STATS,
-				SYNONYM_STATS,
-				ERROR_COUNT
-			FROM ( 
-				SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME,
-					CASE WHEN EXISTS (
-						SELECT 1 
-						FROM SYS.USER_OBJECTS OBJ
-						WHERE OBJ.OBJECT_NAME = D.SYNONYM_NAME
-						AND OBJECT_TYPE = 'PACKAGE'
-					) THEN 'Y' ELSE 'N' END IS_ENABLED,
-					case when GRANT_STATS is not null then GRANT_STATS||';' end GRANT_STATS,
-					case when SYNONYM_STATS is not null then SYNONYM_STATS||';' end SYNONYM_STATS,
-					(SELECT COUNT(*) 
-					 FROM SYS.USER_ERRORS ERR
-					 WHERE ERR.NAME = D.SYNONYM_NAME
-					 AND ERR.TYPE LIKE 'PACKAGE%'
-					) ERROR_COUNT
-				FROM DEPS D
-			) MAIN
-			order by 1
+            WITH DEPS AS (
+                SELECT Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME,
+                    LISTAGG(DEP.GRANT_STAT, '; ') WITHIN GROUP (ORDER BY GRANT_STAT) GRANT_STATS,
+                    LISTAGG(DEP.REVOKE_STAT, '; ') WITHIN GROUP (ORDER BY REVOKE_STAT) REVOKE_STATS,
+                    LISTAGG(DEP.SYNONYM_STAT, '; ') WITHIN GROUP (ORDER BY SYNONYM_STAT) SYNONYM_STATS
+                FROM table(get_APEX_Packages_List) SYN
+                LEFT OUTER JOIN (
+                    SELECT DA.Owner Object_Owner, DA.Name Object_Name,
+                        case when PRI.Privilege IS NULL and DA.referenced_Owner != 'PUBLIC' then 
+                            'GRANT ' || case when OBJ.OBJECT_TYPE IN ('TABLE', 'VIEW') then 'SELECT' else 'EXECUTE' end 
+                            || ' ON ' || DA.referenced_Owner || '.' || DA.referenced_Name 
+                            || ' TO ' || v_Dest_Schema
+                        end GRANT_STAT,
+                        case when PRI.Privilege IS NOT NULL and PRI.Grantee = v_Dest_Schema then
+                            'REVOKE ' || PRI.Privilege
+                            || ' ON '|| DA.referenced_Owner || '.' || DA.referenced_Name 
+                            || ' FROM ' || v_Dest_Schema 
+                        end REVOKE_STAT,
+                        case when Syn.Owner IS NULL AND DB.REFERENCED_OWNER IS NULL then 
+                            'CREATE OR REPLACE SYNONYM ' || v_Dest_Schema || '.' || DA.referenced_Name
+                            || ' FOR ' || DA.referenced_Owner || '.' || DA.referenced_Name 
+                        end SYNONYM_STAT,
+                        PRI.Grantable,
+                        PRI.Privilege,
+                        SYN.OWNER SYNONYM_OWNER
+                    FROM SYS.ALL_DEPENDENCIES DA
+                    LEFT OUTER JOIN SYS.ALL_SYNONYMS SYN 
+                        ON SYN.OWNER IN (v_Dest_Schema, 'PUBLIC')
+                        AND Syn.Synonym_Name = DA.referenced_Name
+                    LEFT OUTER JOIN SYS.ALL_TAB_PRIVS PRI 
+                        ON Pri.table_Schema = DA.referenced_Owner 
+                        AND Pri.table_Name = DA.referenced_Name
+                        AND Pri.type = DA.referenced_Type
+                        AND PRI.Grantee IN (v_Dest_Schema, 'PUBLIC')
+                        AND PRI.privilege IN ('EXECUTE', 'SELECT')
+                    LEFT OUTER JOIN ( -- no VIEW OR SYNONYM with this name already exists
+                        SELECT DB.REFERENCED_NAME, DB.REFERENCED_OWNER
+                        FROM SYS.ALL_DEPENDENCIES DB
+                        WHERE DB.OWNER = v_Dest_Schema
+                        AND DB.NAME = DB.REFERENCED_NAME
+                    ) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER
+                    LEFT OUTER JOIN SYS.ALL_OBJECTS OBJ ON OBJ.OWNER = DA.OWNER and OBJ.OBJECT_NAME = DA.REFERENCED_NAME
+                    WHERE (SYN.OWNER IS NULL OR PRI.PRIVILEGE IS NULL)
+                    AND NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME = 'STANDARD')
+                ) DEP ON DEP.Object_Owner = SYN.PACKAGE_OWNER AND DEP.Object_Name = SYN.PACKAGE_NAME
+                GROUP BY SYN.SYNONYM_NAME, SYN.PACKAGE_OWNER, SYN.PACKAGE_NAME
+            )
+            SELECT SYNONYM_NAME, PACKAGE_OWNER, PACKAGE_NAME,
+                APEX_ITEM.HIDDEN (p_idx => 1, p_value => SYNONYM_NAME, p_item_id => 'f01_'||ROWNUM, p_item_label => 'ROW_SELECTOR$') ||
+                APEX_ITEM.SWITCH (p_idx => 2, 
+                  p_value => IS_ENABLED, 
+                  p_item_id => 'f02_'||ROWNUM, p_item_label => 'SWITCH_ENABLED') 
+                || APEX_ITEM.HIDDEN (p_idx => 3, p_value => IS_ENABLED, p_item_id => 'f03_' || ROWNUM , p_item_label => 'IS_ENABLED') IS_ENABLED_SWITCH,
+                IS_ENABLED,
+                GRANT_STATS,
+                REVOKE_STATS,
+                SYNONYM_STATS,
+                ERROR_COUNT
+            FROM ( 
+                SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME,
+                    CASE WHEN EXISTS (
+                        SELECT 1 
+                        FROM SYS.USER_OBJECTS OBJ
+                        WHERE OBJ.OBJECT_NAME = D.SYNONYM_NAME
+                        AND OBJECT_TYPE = 'PACKAGE'
+                    ) THEN 'Y' ELSE 'N' END IS_ENABLED,
+                    case when GRANT_STATS is not null then GRANT_STATS||';' end GRANT_STATS,
+                    case when REVOKE_STATS is not null then REVOKE_STATS||';' end REVOKE_STATS,
+                    case when SYNONYM_STATS is not null then SYNONYM_STATS||';' end SYNONYM_STATS,
+                    (SELECT COUNT(*) 
+                     FROM SYS.USER_ERRORS ERR
+                     WHERE ERR.NAME = D.SYNONYM_NAME
+                     AND ERR.TYPE LIKE 'PACKAGE%'
+                    ) ERROR_COUNT
+                FROM DEPS D
+            ) MAIN
+            order by 1
         ) loop 
             pipe row (cur);
         end loop;
@@ -514,242 +587,264 @@ IS
     end get_APEX_Control_List;
 
     FUNCTION get_publish_schema (
-    	p_Target_Schema IN VARCHAR2 
+        p_Target_Schema IN VARCHAR2 
     )
     RETURN tab_publish_schema PIPELINED
     IS
     BEGIN
         for cur in (
-			WITH PA AS (
-				SELECT p_Target_Schema GRANTEE,
-					SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') OWNER
-				FROM DUAL 
-			),
-			STATS_Q AS (
-				-- views
-				-------------------------
-				SELECT 'GRANT ' || PRIVS || ' ON ' || S.OWNER || '.' || TABLE_NAME || ' TO ' || PA.GRANTEE GRANT_STAT,
-					'CREATE OR REPLACE VIEW ' || PA.GRANTEE || '.' || TABLE_NAME || 
-					' AS SELECT * FROM ' || S.OWNER || '.' || TABLE_NAME CREATE_STAT,
-					'REVOKE ' || PRIVS || ' ON ' || S.OWNER || '.' || TABLE_NAME || ' FROM ' || PA.GRANTEE REVOKE_STAT, 
-					'DROP VIEW ' || PA.GRANTEE || '.' || TABLE_NAME DROP_STAT,
-					S.OWNER, S.TABLE_NAME OBJECT_NAME, 
-					'VIEW' OBJECT_TYPE, 
-					'VIEW' DEST_OBJECT_TYPE,
-					FOREIGN_DEPS_CNT
-				FROM (
-					SELECT 'SELECT'
-						|| CASE WHEN TR.PRIVS IS NOT NULL THEN ', ' || TR.PRIVS
-						ELSE 
-							CASE WHEN UPDATABLE > 0  AND NVL(D.FOREIGN_DEPS_CNT,0) = 0 THEN ', UPDATE' END
-							|| CASE WHEN INSERTABLE > 0 AND NVL(D.FOREIGN_DEPS_CNT,0) = 0 THEN ', INSERT' END
-							|| CASE WHEN DELETABLE > 0  AND NVL(D.FOREIGN_DEPS_CNT,0) = 0 THEN ', DELETE ' END 
-						END PRIVS,
-						T.TABLE_NAME, T.OWNER, 
-						NVL(D.FOREIGN_DEPS_CNT,0) FOREIGN_DEPS_CNT
-					FROM (
-						SELECT T.TABLE_NAME, T.OWNER,
-							SUM(CASE WHEN UPDATABLE = 'YES' THEN 1 ELSE 0 END) UPDATABLE,
-							SUM(CASE WHEN INSERTABLE = 'YES' THEN 1 ELSE 0 END) INSERTABLE,
-							SUM(CASE WHEN DELETABLE = 'YES' THEN 1 ELSE 0 END) DELETABLE
-						FROM SYS.USER_UPDATABLE_COLUMNS T
-						WHERE EXISTS (
-							SELECT 'X'
-							FROM USER_VIEWS V WHERE V.VIEW_NAME = T.TABLE_NAME
-						)
-						GROUP BY TABLE_NAME, OWNER
-					) T LEFT OUTER JOIN (
-					-- when a view is accessing other foreign view, then is view has SELECT-only access
-						SELECT D.NAME, COUNT(*) FOREIGN_DEPS_CNT
-						FROM SYS.USER_DEPENDENCIES D
-						WHERE D.TYPE = 'VIEW'
-						AND D.REFERENCED_TYPE IN ('VIEW', 'TABLE', 'SYNONYM')
-						AND D.REFERENCED_OWNER != SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
-						GROUP BY NAME
-					) D ON T.TABLE_NAME = D.NAME
-					LEFT OUTER JOIN (
-						-- updatable views with INSTEAD OF trigger
-						SELECT REGEXP_REPLACE(
-							LISTAGG(TRIGGERING_EVENT, ', ') WITHIN GROUP (ORDER BY TRIGGERING_EVENT), 
-							'\sOR\s', ', ') PRIVS,
-							T.TABLE_NAME
-						FROM SYS.USER_TRIGGERS T
-						WHERE TRIGGER_TYPE = 'INSTEAD OF'
-						AND BASE_OBJECT_TYPE = 'VIEW'
-						GROUP BY TABLE_NAME
-					) TR ON T.TABLE_NAME = TR.TABLE_NAME
-				) S, PA
-				WHERE PA.GRANTEE IS NOT NULL
-				UNION ALL   
-				-- normal tables 
-				----------------
-				SELECT 
-					'GRANT ' || PRIVS || ' ON ' 
-					|| PA.OWNER || '.' || TABLE_NAME || ' TO ' || PA.GRANTEE GRANT_STAT,
-					'CREATE OR REPLACE VIEW ' || PA.GRANTEE || '.' || T.TABLE_NAME 
-					|| ' AS SELECT * FROM ' || PA.OWNER || '.' || T.TABLE_NAME CREATE_STAT,
-					'REVOKE ' || PRIVS || ' ON ' 
-					 || PA.OWNER || '.' || TABLE_NAME || ' FROM ' || PA.GRANTEE REVOKE_STAT, 
-					'DROP VIEW ' || PA.GRANTEE || '.' || T.TABLE_NAME DROP_STAT,
-					PA.OWNER, T.TABLE_NAME OBJECT_NAME, 
-					'TABLE' OBJECT_TYPE, 
-					'VIEW' DEST_OBJECT_TYPE,
-					0 FOREIGN_DEPS_CNT
-				FROM (
-					SELECT T.TABLE_NAME,
-						CASE WHEN READ_ONLY = 'NO'
-							AND NOT EXISTS (    -- when this table is part of materialized view, then only SELECT allowed 
-								SELECT 1
-								FROM USER_OBJECTS MV
-								WHERE MV.OBJECT_NAME = T.TABLE_NAME
-								AND MV.OBJECT_TYPE = 'MATERIALIZED VIEW'
-							) THEN 'SELECT, UPDATE, INSERT, DELETE ' 
-							ELSE 'SELECT ' 
-						END PRIVS 
-					FROM SYS.USER_TABLES T
-					WHERE T.IOT_NAME IS NULL	-- skip overflow tables of index organized tables
-					AND T.TABLE_NAME NOT LIKE 'DR$%$_'  -- skip fulltext index
-				) T, PA
-				WHERE PA.GRANTEE IS NOT NULL
-				AND NOT EXISTS (    -- this table is not part of materialized view log 
-					SELECT --+ NO_UNNEST
-						1
-					FROM SYS.ALL_MVIEW_LOGS MV
-					WHERE MV.LOG_TABLE = T.TABLE_NAME
-					AND MV.LOG_OWNER = PA.OWNER
-				)
-				UNION ALL  
-				-- Function, Procedure, Package, Type
-				-------------------------------
-				SELECT 'GRANT EXECUTE ON ' || PA.OWNER || '.' || T.OBJECT_NAME || ' TO ' || PA.GRANTEE GRANT_STAT,
-					'CREATE OR REPLACE SYNONYM '  || PA.GRANTEE || '.' || OBJECT_NAME 
-					|| ' FOR ' || PA.OWNER || '.' || OBJECT_NAME CREATE_STAT,
-					'REVOKE EXECUTE ON ' || PA.OWNER || '.' || T.OBJECT_NAME || ' FROM ' || PA.GRANTEE REVOKE_STAT, 
-					'DROP SYNONYM '  || PA.GRANTEE || '.' || OBJECT_NAME DROP_STAT,
-					PA.OWNER, T.OBJECT_NAME, 
-					T.OBJECT_TYPE, 
-					'SYNONYM' DEST_OBJECT_TYPE,
-					0 FOREIGN_DEPS_CNT
-				FROM SYS.USER_OBJECTS T, PA
-				WHERE PA.GRANTEE IS NOT NULL
-				AND T.OBJECT_TYPE IN ('FUNCTION','PROCEDURE','PACKAGE','TYPE')
-				UNION ALL -- Sequences
-				SELECT 'GRANT SELECT ON ' || PA.OWNER || '.' || T.SEQUENCE_NAME || ' TO ' || PA.GRANTEE GRANT_STAT,
-					'CREATE OR REPLACE SYNONYM '  || PA.GRANTEE || '.' || SEQUENCE_NAME 
-					|| ' FOR ' || PA.OWNER || '.' || SEQUENCE_NAME CREATE_STAT,
-					'REVOKE SELECT ON ' || PA.OWNER || '.' || T.SEQUENCE_NAME || ' FROM ' || PA.GRANTEE REVOKE_STAT, 
-					'DROP SYNONYM '  || PA.GRANTEE || '.' || SEQUENCE_NAME DROP_STAT,
-					PA.OWNER, T.SEQUENCE_NAME OBJECT_NAME, 
-					'SEQUENCE' OBJECT_TYPE, 
-					'SYNONYM' DEST_OBJECT_TYPE,
-					0 FOREIGN_DEPS_CNT
-				FROM SYS.USER_SEQUENCES T, PA
-				WHERE PA.GRANTEE IS NOT NULL
-			), MAIN_Q AS (
-				SELECT S.OWNER, S.OBJECT_NAME, S.OBJECT_TYPE, S.DEST_OBJECT_TYPE,
-					S.FOREIGN_DEPS_CNT, 
-					case when EXISTS (
-							SELECT 1 
-							FROM SYS.ALL_DEPENDENCIES D
-							WHERE D.OWNER = p_Target_Schema
-							AND D.NAME = S.OBJECT_NAME
-							and D.REFERENCED_OWNER= S.OWNER
-							and D.REFERENCED_NAME = S.OBJECT_NAME
-							AND D.REFERENCED_TYPE = S.OBJECT_TYPE
-						) then 'Y' else 'N'
-					end DEST_OBJECT_EXISTS,
-					case when EXISTS (
-							SELECT 1 
-							FROM SYS.ALL_SYNONYMS SYN
-							WHERE SYN.SYNONYM_NAME = S.OBJECT_NAME
-							AND SYN.OWNER = 'PUBLIC'
-						) then 'Y' else 'N'
-					end CONFLICTING_OBJECT_EXISTS,
-					p_Target_Schema DEST_SCHEMA,
-					S.GRANT_STAT, S.CREATE_STAT, S.REVOKE_STAT, S.DROP_STAT
-				FROM STATS_Q S
-			)
-			SELECT S.OWNER, S.OBJECT_NAME, S.OBJECT_TYPE, S.DEST_OBJECT_TYPE, S.FOREIGN_DEPS_CNT, 
-				S.DEST_OBJECT_EXISTS, S.CONFLICTING_OBJECT_EXISTS, S.DEST_SCHEMA, 
-				S.GRANT_STAT, S.CREATE_STAT, S.REVOKE_STAT, S.DROP_STAT,
-				case when CONFLICTING_OBJECT_EXISTS = 'N' then 
-					APEX_ITEM.HIDDEN (p_idx => 1, p_value => OBJECT_NAME, p_item_id => 'f01_'||ROWNUM, p_item_label => 'ROW_SELECTOR$') 
-					|| APEX_ITEM.SWITCH (p_idx => 2,  p_value => DEST_OBJECT_EXISTS, p_item_id => 'f02_'||ROWNUM, p_item_label => 'SWITCH_ENABLED') 
-					|| APEX_ITEM.HIDDEN (p_idx => 3, p_value => DEST_OBJECT_EXISTS, p_item_id => 'f03_' || ROWNUM) 
-					|| APEX_ITEM.HIDDEN (p_idx => 4, p_value => GRANT_STAT, p_item_id => 'f04_' || ROWNUM) 
-					|| APEX_ITEM.HIDDEN (p_idx => 5, p_value => CREATE_STAT, p_item_id => 'f05_' || ROWNUM) 
-					|| APEX_ITEM.HIDDEN (p_idx => 6, p_value => REVOKE_STAT, p_item_id => 'f06_' || ROWNUM) 
-					|| APEX_ITEM.HIDDEN (p_idx => 7, p_value => DROP_STAT, p_item_id => 'f07_' || ROWNUM) 
-					|| APEX_ITEM.HIDDEN (p_idx => 8, p_value => FOREIGN_DEPS_CNT, p_item_id => 'f08_' || ROWNUM) 
-				end IS_ENABLED_SWITCH
-			FROM MAIN_Q S
+            WITH PA AS (
+                SELECT p_Target_Schema GRANTEE,
+                    SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') OWNER
+                FROM DUAL 
+            ),
+            PKEY_Q AS ( 
+                SELECT 
+                    C.TABLE_NAME, C.OWNER TABLE_OWNER, 
+                    ', CONSTRAINT ' || Enquote_Name(C.CONSTRAINT_NAME) || ' PRIMARY KEY ('
+                    || LISTAGG(Enquote_Name(C.COLUMN_NAME), ',') WITHIN GROUP (ORDER BY C.POSITION) 
+                    || ') RELY DISABLE' PKEY_CONS
+                FROM SYS.USER_CONSTRAINTS B
+                JOIN SYS.USER_CONS_COLUMNS C ON C.TABLE_NAME = B.TABLE_NAME AND C.CONSTRAINT_NAME = B.CONSTRAINT_NAME AND C.OWNER = B.OWNER
+                WHERE B.CONSTRAINT_TYPE = 'P'
+                AND B.OWNER = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
+                AND B.TABLE_NAME NOT LIKE 'DR$%$_'  -- skip fulltext index
+                AND B.TABLE_NAME NOT LIKE 'BIN$%'  -- this table is in the recyclebin
+                GROUP BY C.TABLE_NAME, C.OWNER, C.CONSTRAINT_NAME
+            ),
+            COLS_Q AS (
+                SELECT TABLE_NAME, LISTAGG(Enquote_Name(COLUMN_NAME), ', ') WITHIN GROUP (ORDER BY COLUMN_ID) TAB_COLUMNS
+                FROM SYS.USER_TAB_COLUMNS
+                GROUP BY TABLE_NAME
+            ),
+            STATS_Q AS (
+                -- views
+                -------------------------
+                SELECT 'GRANT ' || PRIVS || ' ON ' || S.OWNER || '.' || S.TABLE_NAME || ' TO ' || PA.GRANTEE GRANT_STAT,
+                    'CREATE OR REPLACE VIEW ' || PA.GRANTEE || '.' || S.TABLE_NAME 
+                    || ' (' || S.TAB_COLUMNS || S.PKEY_CONS || ')'
+                    || ' AS SELECT * FROM ' || S.OWNER || '.' || S.TABLE_NAME CREATE_STAT,
+                    'REVOKE ' || PRIVS || ' ON ' || S.OWNER || '.' || S.TABLE_NAME || ' FROM ' || PA.GRANTEE REVOKE_STAT, 
+                    'DROP VIEW ' || PA.GRANTEE || '.' || S.TABLE_NAME DROP_STAT,
+                    S.OWNER, S.TABLE_NAME OBJECT_NAME, 
+                    'VIEW' OBJECT_TYPE, 
+                    'VIEW' DEST_OBJECT_TYPE,
+                    FOREIGN_DEPS_CNT
+                FROM (
+                    SELECT 'SELECT'
+                        || CASE WHEN TR.PRIVS IS NOT NULL THEN ', ' || TR.PRIVS
+                        ELSE 
+                            CASE WHEN UPDATABLE > 0  AND NVL(D.FOREIGN_DEPS_CNT,0) = 0 THEN ', UPDATE' END
+                            || CASE WHEN INSERTABLE > 0 AND NVL(D.FOREIGN_DEPS_CNT,0) = 0 THEN ', INSERT' END
+                            || CASE WHEN DELETABLE > 0  AND NVL(D.FOREIGN_DEPS_CNT,0) = 0 THEN ', DELETE ' END 
+                        END PRIVS,
+                        T.TABLE_NAME, T.OWNER, 
+                        NVL(D.FOREIGN_DEPS_CNT,0) FOREIGN_DEPS_CNT,
+                        P.PKEY_CONS, C.TAB_COLUMNS
+                    FROM (
+                        SELECT T.TABLE_NAME, T.OWNER,
+                            SUM(CASE WHEN UPDATABLE = 'YES' THEN 1 ELSE 0 END) UPDATABLE,
+                            SUM(CASE WHEN INSERTABLE = 'YES' THEN 1 ELSE 0 END) INSERTABLE,
+                            SUM(CASE WHEN DELETABLE = 'YES' THEN 1 ELSE 0 END) DELETABLE
+                        FROM SYS.USER_UPDATABLE_COLUMNS T
+                        WHERE EXISTS (
+                            SELECT 'X'
+                            FROM USER_VIEWS V WHERE V.VIEW_NAME = T.TABLE_NAME
+                        )
+                        GROUP BY TABLE_NAME, OWNER
+                    ) T LEFT OUTER JOIN (
+                    -- when a view is accessing other foreign view, then is view has SELECT-only access
+                        SELECT D.NAME, COUNT(*) FOREIGN_DEPS_CNT
+                        FROM SYS.USER_DEPENDENCIES D
+                        WHERE D.TYPE = 'VIEW'
+                        AND D.REFERENCED_TYPE IN ('VIEW', 'TABLE', 'SYNONYM')
+                        AND D.REFERENCED_OWNER != SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
+                        GROUP BY NAME
+                    ) D ON T.TABLE_NAME = D.NAME
+                    LEFT OUTER JOIN (
+                        -- updatable views with INSTEAD OF trigger
+                        SELECT REGEXP_REPLACE(
+                            LISTAGG(TRIGGERING_EVENT, ', ') WITHIN GROUP (ORDER BY TRIGGERING_EVENT), 
+                            '\sOR\s', ', ') PRIVS,
+                            T.TABLE_NAME
+                        FROM SYS.USER_TRIGGERS T
+                        WHERE TRIGGER_TYPE = 'INSTEAD OF'
+                        AND BASE_OBJECT_TYPE = 'VIEW'
+                        GROUP BY TABLE_NAME
+                    ) TR ON T.TABLE_NAME = TR.TABLE_NAME
+                    LEFT OUTER JOIN PKEY_Q P ON T.TABLE_NAME = P.TABLE_NAME
+                    LEFT OUTER JOIN COLS_Q C ON T.TABLE_NAME = C.TABLE_NAME
+                ) S, PA
+                WHERE PA.GRANTEE IS NOT NULL
+                UNION ALL   
+                -- normal tables 
+                ----------------
+                SELECT 
+                    'GRANT ' || PRIVS || ' ON ' 
+                    || PA.OWNER || '.' || TABLE_NAME || ' TO ' || PA.GRANTEE GRANT_STAT,
+                    'CREATE OR REPLACE VIEW ' || PA.GRANTEE || '.' || T.TABLE_NAME 
+                    || ' (' || T.TAB_COLUMNS || T.PKEY_CONS || ')'
+                    || ' AS SELECT * FROM ' || PA.OWNER || '.' || T.TABLE_NAME CREATE_STAT,
+                    'REVOKE ' || PRIVS || ' ON ' 
+                     || PA.OWNER || '.' || TABLE_NAME || ' FROM ' || PA.GRANTEE REVOKE_STAT, 
+                    'DROP VIEW ' || PA.GRANTEE || '.' || T.TABLE_NAME DROP_STAT,
+                    PA.OWNER, T.TABLE_NAME OBJECT_NAME, 
+                    'TABLE' OBJECT_TYPE, 
+                    'VIEW' DEST_OBJECT_TYPE,
+                    0 FOREIGN_DEPS_CNT
+                FROM (
+                    SELECT T.TABLE_NAME,
+                        CASE WHEN READ_ONLY = 'NO'
+                            AND NOT EXISTS (    -- when this table is part of materialized view, then only SELECT allowed 
+                                SELECT 1
+                                FROM USER_OBJECTS MV
+                                WHERE MV.OBJECT_NAME = T.TABLE_NAME
+                                AND MV.OBJECT_TYPE = 'MATERIALIZED VIEW'
+                            ) THEN 'SELECT, UPDATE, INSERT, DELETE ' 
+                            ELSE 'SELECT ' 
+                        END PRIVS,
+                        P.PKEY_CONS, C.TAB_COLUMNS
+                    FROM SYS.USER_TABLES T
+                    LEFT OUTER JOIN PKEY_Q P ON T.TABLE_NAME = P.TABLE_NAME
+                    LEFT OUTER JOIN COLS_Q C ON T.TABLE_NAME = C.TABLE_NAME
+                    WHERE T.IOT_NAME IS NULL    -- skip overflow tables of index organized tables
+                    AND T.TABLE_NAME NOT LIKE 'DR$%$_'  -- skip fulltext index
+                ) T, PA
+                WHERE PA.GRANTEE IS NOT NULL
+                AND NOT EXISTS (    -- this table is not part of materialized view log 
+                    SELECT --+ NO_UNNEST
+                        1
+                    FROM SYS.ALL_MVIEW_LOGS MV
+                    WHERE MV.LOG_TABLE = T.TABLE_NAME
+                    AND MV.LOG_OWNER = PA.OWNER
+                )
+                UNION ALL  
+                -- Function, Procedure, Package, Type
+                -------------------------------
+                SELECT 'GRANT EXECUTE ON ' || PA.OWNER || '.' || T.OBJECT_NAME || ' TO ' || PA.GRANTEE GRANT_STAT,
+                    'CREATE OR REPLACE SYNONYM '  || PA.GRANTEE || '.' || OBJECT_NAME 
+                    || ' FOR ' || PA.OWNER || '.' || OBJECT_NAME CREATE_STAT,
+                    'REVOKE EXECUTE ON ' || PA.OWNER || '.' || T.OBJECT_NAME || ' FROM ' || PA.GRANTEE REVOKE_STAT, 
+                    'DROP SYNONYM '  || PA.GRANTEE || '.' || OBJECT_NAME DROP_STAT,
+                    PA.OWNER, T.OBJECT_NAME, 
+                    T.OBJECT_TYPE, 
+                    'SYNONYM' DEST_OBJECT_TYPE,
+                    0 FOREIGN_DEPS_CNT
+                FROM SYS.USER_OBJECTS T, PA
+                WHERE PA.GRANTEE IS NOT NULL
+                AND T.OBJECT_TYPE IN ('FUNCTION','PROCEDURE','PACKAGE','TYPE')
+                UNION ALL -- Sequences
+                SELECT 'GRANT SELECT ON ' || PA.OWNER || '.' || T.SEQUENCE_NAME || ' TO ' || PA.GRANTEE GRANT_STAT,
+                    'CREATE OR REPLACE SYNONYM '  || PA.GRANTEE || '.' || SEQUENCE_NAME 
+                    || ' FOR ' || PA.OWNER || '.' || SEQUENCE_NAME CREATE_STAT,
+                    'REVOKE SELECT ON ' || PA.OWNER || '.' || T.SEQUENCE_NAME || ' FROM ' || PA.GRANTEE REVOKE_STAT, 
+                    'DROP SYNONYM '  || PA.GRANTEE || '.' || SEQUENCE_NAME DROP_STAT,
+                    PA.OWNER, T.SEQUENCE_NAME OBJECT_NAME, 
+                    'SEQUENCE' OBJECT_TYPE, 
+                    'SYNONYM' DEST_OBJECT_TYPE,
+                    0 FOREIGN_DEPS_CNT
+                FROM SYS.USER_SEQUENCES T, PA
+                WHERE PA.GRANTEE IS NOT NULL
+            ), MAIN_Q AS (
+                SELECT S.OWNER, S.OBJECT_NAME, S.OBJECT_TYPE, S.DEST_OBJECT_TYPE,
+                    S.FOREIGN_DEPS_CNT, 
+                    case when EXISTS (
+                            SELECT 1 
+                            FROM SYS.ALL_DEPENDENCIES D
+                            WHERE D.OWNER = p_Target_Schema
+                            AND D.NAME = S.OBJECT_NAME
+                            and D.REFERENCED_OWNER= S.OWNER
+                            and D.REFERENCED_NAME = S.OBJECT_NAME
+                            AND D.REFERENCED_TYPE = S.OBJECT_TYPE
+                        ) or EXISTS (
+                            SELECT 1 
+                            FROM SYS.ALL_OBJECTS OBJ 
+							WHERE OBJ.OWNER = p_Target_Schema
+							AND OBJ.OBJECT_NAME = S.OBJECT_NAME
+							AND OBJ.OBJECT_TYPE = S.DEST_OBJECT_TYPE
+                        ) then 'Y' else 'N'
+                    end DEST_OBJECT_EXISTS,
+                    case when EXISTS (
+                            SELECT 1 
+                            FROM SYS.ALL_SYNONYMS SYN
+                            WHERE SYN.SYNONYM_NAME = S.OBJECT_NAME
+                            AND SYN.OWNER = 'PUBLIC'
+                        ) then 'Y' else 'N'
+                    end CONFLICTING_OBJECT_EXISTS,
+                    p_Target_Schema DEST_SCHEMA,
+                    S.GRANT_STAT, S.CREATE_STAT, S.REVOKE_STAT, S.DROP_STAT
+                FROM STATS_Q S
+            )
+            SELECT S.OWNER, S.OBJECT_NAME, S.OBJECT_TYPE, S.DEST_OBJECT_TYPE, S.FOREIGN_DEPS_CNT, 
+                S.DEST_OBJECT_EXISTS, S.CONFLICTING_OBJECT_EXISTS, S.DEST_SCHEMA, 
+                S.GRANT_STAT, S.CREATE_STAT, S.REVOKE_STAT, S.DROP_STAT,
+                case when CONFLICTING_OBJECT_EXISTS = 'N' then 
+                    APEX_ITEM.HIDDEN (p_idx => 1, p_value => OBJECT_NAME, p_item_id => 'f01_'||ROWNUM, p_item_label => 'ROW_SELECTOR$')
+                    || APEX_ITEM.SWITCH (p_idx => 2,  p_value => DEST_OBJECT_EXISTS, p_item_id => 'f02_'||ROWNUM, p_item_label => 'SWITCH_ENABLED') 
+                    || APEX_ITEM.HIDDEN (p_idx => 3, p_value => DEST_OBJECT_EXISTS, p_item_id => 'f03_' || ROWNUM) 
+                    || APEX_ITEM.HIDDEN (p_idx => 4, p_value => GRANT_STAT, p_item_id => 'f04_' || ROWNUM) 
+                    || APEX_ITEM.HIDDEN (p_idx => 5, p_value => CREATE_STAT, p_item_id => 'f05_' || ROWNUM) 
+                    || APEX_ITEM.HIDDEN (p_idx => 6, p_value => REVOKE_STAT, p_item_id => 'f06_' || ROWNUM) 
+                    || APEX_ITEM.HIDDEN (p_idx => 7, p_value => DROP_STAT, p_item_id => 'f07_' || ROWNUM) 
+                    || APEX_ITEM.HIDDEN (p_idx => 8, p_value => FOREIGN_DEPS_CNT, p_item_id => 'f08_' || ROWNUM) 
+                end IS_ENABLED_SWITCH
+            FROM MAIN_Q S
         ) loop 
             pipe row (cur);
         end loop;
         return;
     END get_publish_schema;
 
-    FUNCTION Enquote_Name ( p_Text VARCHAR2 )
-    RETURN VARCHAR2 DETERMINISTIC
-    IS
-    BEGIN
-        RETURN c_DQuote || REPLACE(UPPER(p_Text), c_DQuote, c_DQuote||c_DQuote) || c_DQuote ;
-    END Enquote_Name;
+    PROCEDURE Copy_View (
+        p_View_Name IN VARCHAR2,
+        p_Dest_Schema IN VARCHAR2 
+    )
+    is  
+        v_sql_text CLOB;
+    begin
+        for c in (
+            SELECT TEXT,
+                (SELECT LISTAGG( Enquote_Name(COLUMN_NAME), ', ') WITHIN GROUP (ORDER BY COLUMN_ID) COLS 
+                FROM SYS.USER_TAB_COLS C
+                WHERE C.TABLE_NAME = A.VIEW_NAME
+                GROUP BY C.TABLE_NAME) COLS
+            FROM SYS.USER_VIEWS A WHERE VIEW_NAME = p_View_Name
+        ) loop
+            v_sql_text := 'CREATE OR REPLACE VIEW ' 
+            || Enquote_Name(p_Dest_Schema) || '.' || Enquote_Name(p_View_Name) 
+            || ' ( ' || c.COLS || ' ) '
+            || chr(10) || 'AS ' ||  c.text;
+            EXECUTE IMMEDIATE v_sql_text;
+        end loop;
+    end Copy_View;
 
-    FUNCTION Enquote_Literal ( p_Text VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT 1000 )
-    RETURN VARCHAR2 DETERMINISTIC
-    IS
-    BEGIN
-        RETURN c_Quote || REPLACE(SUBSTR(p_Text, 1, p_value_max_length), c_Quote, c_Quote||c_Quote) || c_Quote ;
-    END Enquote_Literal;
-    
-	PROCEDURE Copy_View (
-		p_View_Name IN VARCHAR2,
-		p_Dest_Schema IN VARCHAR2 
-	)
-	is  
-		v_sql_text CLOB;
-	begin
-		for c in (
-			SELECT TEXT,
-				(SELECT LISTAGG( COLUMN_NAME, ', ') WITHIN GROUP (ORDER BY COLUMN_ID) COLS 
-				FROM SYS.USER_TAB_COLS C
-				WHERE C.TABLE_NAME = A.VIEW_NAME
-				GROUP BY C.TABLE_NAME) COLS
-			FROM USER_VIEWS A WHERE VIEW_NAME = p_View_Name
-		) loop
-			v_sql_text := 'CREATE OR REPLACE VIEW ' 
-			|| Enquote_Name(p_Dest_Schema) || '.' || Enquote_Name(p_View_Name) 
-			|| ' ( ' || c.COLS || ' ) '
-			|| chr(10) || 'AS ' ||  c.text;
-			EXECUTE IMMEDIATE v_sql_text;
-		end loop;
-	end Copy_View;
-
-	PROCEDURE Log_Elapsed_Time (
-		p_Timemark IN OUT NUMBER,
-		p_Message IN VARCHAR2)
-	is
-		v_Timemark number := dbms_utility.get_time;
-		v_TimeString VARCHAR2(40) := TO_CHAR((v_Timemark - p_Timemark)/100.0, '9G990D00');
-	begin
-		p_Timemark := v_Timemark;
-		if apex_application.g_debug then
-			APEX_DEBUG.Message('%s %s', p_Message, v_TimeString);
-		else 
-			DBMS_OUTPUT.PUT_LINE (p_Message||chr(9)||v_TimeString);
-		end if;
-	end Log_Elapsed_Time;
+    PROCEDURE Log_Elapsed_Time (
+        p_Timemark IN OUT NUMBER,
+        p_Message IN VARCHAR2)
+    is
+        v_Timemark number := dbms_utility.get_time;
+        v_TimeString VARCHAR2(40) := TO_CHAR((v_Timemark - p_Timemark)/100.0, '9G990D00');
+    begin
+        p_Timemark := v_Timemark;
+        if apex_application.g_debug then
+            APEX_DEBUG.Message('%s %s', p_Message, v_TimeString);
+        else 
+            DBMS_OUTPUT.PUT_LINE (p_Message||chr(9)||v_TimeString);
+        end if;
+    end Log_Elapsed_Time;
 
     FUNCTION Is_Printable_Type (
         p_PLS_Type IN VARCHAR2
-    ) RETURN BOOLEAN DETERMINISTIC 
+    ) RETURN VARCHAR2 DETERMINISTIC 
     IS 
+        $IF DBMS_DB_VERSION.VERSION >= 12 $THEN
+            PRAGMA UDF;
+        $END
     BEGIN 
-        RETURN p_PLS_Type IN ('BINARY_DOUBLE', 'BINARY_FLOAT', 'BINARY_INTEGER', 'BLOB', 'BOOLEAN',
+        RETURN case when p_PLS_Type IN ('BINARY_DOUBLE', 'BINARY_FLOAT', 'BINARY_INTEGER', 'BLOB', 'BOOLEAN',
                 'CHAR', 'CLOB', 'DATE', 'DOUBLE PRECISION', 'FLOAT', 'INTEGER', 'NUMBER', 'PLS_INTEGER', 'RAW', 'REAL', 
                 'ROWID', 'SMALLINT', 'TIME', 'TIME WITH TIME ZONE', 'TIMESTAMP', 'TIMESTAMP WITH LOCAL TIME ZONE', 
-                'TIMESTAMP WITH TIME ZONE', 'UROWID', 'VARCHAR2');
+                'TIMESTAMP WITH TIME ZONE', 'UROWID', 'VARCHAR2') then 'YES' else 'NO' end;
     END Is_Printable_Type;
 
     /* build an expression that captures the parameters of an package procedure for logging.
@@ -770,7 +865,9 @@ IS
         p_in_out VARCHAR2 DEFAULT 'IN/OUT' -- IN, OUT, IN/OUT
     ) RETURN VARCHAR2
     IS
-        PRAGMA UDF;
+        $IF DBMS_DB_VERSION.VERSION >= 12 $THEN
+            PRAGMA UDF;
+        $END
         c_newline VARCHAR2(10) := 'chr(10)'||chr(10);
         v_argument_per_line CONSTANT NUMBER := 7;
         c_conop VARCHAR2(10) := ' || ';
@@ -796,37 +893,41 @@ IS
         loop 
             exit when length(v_result_str) > 32000; 
             if (c_cur.IN_OUT != 'IN' or p_in_out IN ('IN', 'IN/OUT')) then
-	            v_count := v_count + 1;
-            	v_offset := INSTR(c_cur.ARGUMENT_NAME, '_');
-            	if v_offset > 0 then 
-                	v_argument_name := lower(substr(c_cur.ARGUMENT_NAME, 1, v_offset)) || initcap(substr(c_cur.ARGUMENT_NAME, v_offset+1));
+                v_count := v_count + 1;
+                v_offset := INSTR(c_cur.ARGUMENT_NAME, '_');
+                if v_offset > 0 then 
+                    v_argument_name := lower(substr(c_cur.ARGUMENT_NAME, 1, v_offset)) || initcap(substr(c_cur.ARGUMENT_NAME, v_offset+1));
                 else 
-                	v_argument_name := lower(c_cur.ARGUMENT_NAME);
-				end if;
+                    v_argument_name := lower(c_cur.ARGUMENT_NAME);
+                end if;
                 if v_result_str IS NOT NULL then 
                     v_result_str := v_result_str 
-                --    || c_conop || Enquote_Literal(',') 
                     || case when mod(c_cur.POSITION-1, v_argument_per_line) = 0 then c_conop || c_newline else chr(10) end
                     || '    ' || c_conop;
                 end if;
                 if c_cur.IN_OUT != 'IN' and p_in_out = 'IN' then -- OUT parameters are not converted to a literal.
                     v_result_str := v_result_str 
                     || Enquote_Literal(case when v_count > 1 then ', ' end
-                    	|| v_argument_name || '=>' || v_argument_name);
+                        || v_argument_name || '=>' || v_argument_name);
                 else 
                     v_result_str := v_result_str 
                     || Enquote_Literal(case when v_count > 1 then ', ' end
-                    	|| v_argument_name || '=>') 
+                        || v_argument_name || '=>') 
                     || c_conop
-                    || case when Is_Printable_Type(c_cur.PLS_TYPE)
+                    || case when Is_Printable_Type(c_cur.PLS_TYPE) = 'YES'
                         then 
                             'api_trace.'
-                            || case when c_cur.PLS_TYPE = 'RAW' then 'Literal_RAW' else 'Literal' end
+                            || case when c_cur.ARGUMENT_NAME in ('P_PASSWORD', 'P_PASS', 'P_WALLET_PWD', 'P_WEB_PASSWORD', 'P_OLD_PASSWORD', 'P_NEW_PASSWORD')
+                            	then 'Literal_PWD'
+                            when c_cur.PLS_TYPE = 'RAW' 
+                            	then 'Literal_RAW' 
+                            	else 'Literal' 
+                            end
                             || '(' || p_bind_char || v_argument_name 
                             || case when p_value_max_length != 1000 then ', ' || p_value_max_length end
                             || ')'
                         else 
-                            Enquote_Literal('<datatype '||NVL(c_cur.PLS_TYPE, c_cur.DATA_TYPE)||' >')
+                            Enquote_Literal('<datatype '||NVL(c_cur.PLS_TYPE, c_cur.DATA_TYPE)||'>')
                     end;
                 end if;
             end if;
@@ -894,21 +995,25 @@ IS
         end if;
     END Resolve_Synonym;
 
-	FUNCTION Format_Return_Value (
-		p_Procedure_Name IN VARCHAR2,
-		p_PLS_Type IN VARCHAR2,
-		p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result'
+    FUNCTION Format_Return_Value (
+        p_Procedure_Name IN VARCHAR2,
+        p_PLS_Type IN VARCHAR2,
+        p_Data_Type IN VARCHAR2 DEFAULT NULL,
+        p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result'
     ) RETURN VARCHAR2 
     IS 
     BEGIN
-		RETURN Enquote_Literal(p_Procedure_Name ||' returns ') 
-		|| case when Is_Printable_Type(p_PLS_Type) then 
-			chr(10) || '     || api_trace.'
-			|| case when p_PLS_Type= 'RAW' then 'Literal_RAW' else 'Literal' end
-			|| '(' || p_Variable_Name || ')'
-		end;
+        RETURN Enquote_Literal(p_Procedure_Name || ' returns ') 
+        || case when Is_Printable_Type(p_PLS_Type) = 'YES' then 
+            ' || api_trace.'
+            || case when p_PLS_Type= 'RAW' then 'Literal_RAW' else 'Literal' end
+            || '(' || p_Variable_Name || ')'
+        when p_Data_Type = 'TABLE' then 
+            ' || ' || p_Variable_Name || '.COUNT || '
+            || Enquote_Literal(' rows ') 
+        end;
     END Format_Return_Value;
-	
+    
     FUNCTION Dyn_Log_Call_List (
         p_Package_Name IN VARCHAR2,
         p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
@@ -920,6 +1025,7 @@ IS
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result',
         p_Condition_Start IN VARCHAR2 DEFAULT c_APEX_Condition_Start,
         p_Condition_End IN VARCHAR2 DEFAULT c_APEX_Condition_End,
+        p_Condition_Enabled VARCHAR2 DEFAULT 'N', --Y/N
         p_Indent IN NUMBER DEFAULT 8
     )
     RETURN tab_logging_calls PIPELINED
@@ -931,128 +1037,135 @@ IS
         v_DBLink VARCHAR2(128);
         v_Object_Type_Out SYS.ALL_OBJECTS.OBJECT_TYPE%TYPE;
         v_Editionable_Out SYS.ALL_OBJECTS.OBJECT_TYPE%TYPE;
-		v_Condition_Start CONSTANT VARCHAR2(1000) := case when p_Condition_Start IS NOT NULL then chr(10) || rpad(' ', p_Indent) || p_Condition_Start || chr(10) end;
-		v_Condition_End CONSTANT VARCHAR2(1000) := case when p_Condition_End IS NOT NULL then chr(10) || rpad(' ', p_Indent) || p_Condition_End || chr(10) end;
-		
+        v_Condition_Start CONSTANT VARCHAR2(1000) := case when p_Condition_Start IS NOT NULL and p_Condition_Enabled = 'Y' then chr(10) || rpad(' ', p_Indent) || p_Condition_Start end;
+        v_Condition_End CONSTANT VARCHAR2(1000) := case when p_Condition_End IS NOT NULL and p_Condition_Enabled = 'Y' then chr(10) || rpad(' ', p_Indent) || p_Condition_End || chr(10) end;
+        
         CURSOR all_proc_cur
         IS
         WITH PARAM_Q AS (
-        	SELECT PACKAGE_NAME, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD,
-        		INITCAP(PACKAGE_NAME) || '.' || INITCAP(OBJECT_NAME) CALLING_SUBPROG, 
-        		LISTAGG(LOWER(ARGUMENT_NAME) , ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST,
-        		LISTAGG(CASE WHEN IN_OUT IN ('IN/OUT', 'IN') THEN LOWER(ARGUMENT_NAME) END, ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_IN,
-        		LISTAGG(CASE WHEN IN_OUT IN ('IN/OUT', 'OUT') THEN LOWER(ARGUMENT_NAME) END, ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_OUT,
-        		SUM(CASE WHEN IN_OUT IN ('IN/OUT', 'OUT') AND ARGUMENT_NAME IS NOT NULL THEN 1 ELSE 0 END) OUT_COUNT,
-        		MAX(CASE WHEN IN_OUT = 'OUT' AND ARGUMENT_NAME IS NULL THEN PLS_TYPE END) RETURN_PLS_TYPE
-			FROM SYS.ALL_ARGUMENTS 
-			WHERE PACKAGE_NAME = v_Package_Name_Out
-			AND OWNER = v_Package_Owner_Out
-			GROUP BY PACKAGE_NAME, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD
+            SELECT PACKAGE_NAME, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD,
+                INITCAP(PACKAGE_NAME) || '.' || INITCAP(OBJECT_NAME) CALLING_SUBPROG, 
+                LISTAGG(LOWER(ARGUMENT_NAME) , ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST,
+                LISTAGG(CASE WHEN IN_OUT IN ('IN/OUT', 'IN') THEN LOWER(ARGUMENT_NAME) END, ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_IN,
+                LISTAGG(CASE WHEN IN_OUT IN ('IN/OUT', 'OUT') THEN LOWER(ARGUMENT_NAME) END, ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_OUT,
+                SUM(CASE WHEN IN_OUT IN ('IN/OUT', 'OUT') AND ARGUMENT_NAME IS NOT NULL THEN 1 ELSE 0 END) OUT_COUNT,
+                MAX(CASE WHEN IN_OUT = 'OUT' AND ARGUMENT_NAME IS NULL THEN PLS_TYPE END) RETURN_PLS_TYPE,
+                MAX(CASE WHEN IN_OUT = 'OUT' AND ARGUMENT_NAME IS NULL THEN DATA_TYPE END) RETURN_DATA_TYPE
+            FROM SYS.ALL_ARGUMENTS 
+            WHERE PACKAGE_NAME = v_Package_Name_Out
+            AND OWNER = v_Package_Owner_Out
+            AND (Is_Printable_Type(PLS_TYPE) = 'YES' or ARGUMENT_NAME IS NULL)
+            GROUP BY PACKAGE_NAME, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD
         )
         SELECT PACKAGE_NAME, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD,
             INITCAP(OBJECT_NAME) PROCEDURE_NAME, 
             CASE WHEN p_Compact = 'Y' and p_Logging_Start_Enabled = 'Y' THEN 
                 v_Condition_Start
+                || chr(10)
                 || rpad(' ', p_Indent+4)
                 || 'EXECUTE IMMEDIATE api_trace.Dyn_Log_Start'
                 || case when OVERLOAD is not null then '(p_overload => ' || OVERLOAD || ')' end
                 || case when PARAM_LIST_IN IS NOT NULL then -- ??
-                	chr(10) 
-                	|| rpad(' ', p_Indent+4)
-                	|| 'USING '
-                	|| PARAM_LIST_IN
+                    chr(10) 
+                    || rpad(' ', p_Indent+4)
+                    || 'USING '
+                    || PARAM_LIST_IN
                 end
                 || ';' 
                 || v_Condition_End
                 || chr(10) || '----' || chr(10) 
                 || v_Condition_Start
-            	|| rpad(' ', p_Indent+4)
+                || chr(10)
+                || rpad(' ', p_Indent+4)
                 || 'EXECUTE IMMEDIATE api_trace.Dyn_Log_Exit'
                 || case when OVERLOAD is not null then '(p_overload => ' || OVERLOAD || ')' end
                 || case when PARAM_LIST_OUT IS NOT NULL then 
-                	chr(10) 
-                	|| rpad(' ', p_Indent+4)
-                	|| 'USING '
-                	|| PARAM_LIST_OUT
+                    chr(10) 
+                    || rpad(' ', p_Indent+4)
+                    || 'USING '
+                    || PARAM_LIST_OUT
                 end
                 || ';' 
                 || v_Condition_End
-			WHEN p_Compact = 'Y' and p_Logging_Start_Enabled = 'N' THEN 
+            WHEN p_Compact = 'Y' and p_Logging_Start_Enabled = 'N' THEN 
                 v_Condition_Start
+                || chr(10)
                 || rpad(' ', p_Indent+4)
                 || 'EXECUTE IMMEDIATE api_trace.Dyn_Log_Call'
                 || case when OVERLOAD is not null then '(p_overload => ' || OVERLOAD || ')' end
                 || case when PARAM_LIST IS NOT NULL then 
-                	chr(10) 
-                	|| rpad(' ', p_Indent+4)
-                	|| 'USING '
-                	|| PARAM_LIST
+                    chr(10) 
+                    || rpad(' ', p_Indent+4)
+                    || 'USING '
+                    || PARAM_LIST
                 end
                 || ';' 
                 || v_Condition_End
             WHEN p_Compact = 'N' and p_Logging_Start_Enabled = 'Y' THEN 
-            	v_Condition_Start
-            	|| rpad(' ', p_Indent+4)
-                || replace(apex_string.format(
-                	p_message => p_Logging_Start_Call,
-                    p0 => api_trace.Format_Call_Parameter(
+                v_Condition_Start
+                || chr(10)
+                || rpad(' ', p_Indent+4)
+                || replace(replace(
+                    p_Logging_Start_Call, '%s',
+                    api_trace.Format_Call_Parameter(
                         p_calling_subprog => CALLING_SUBPROG,
                         p_bind_char => null,
                         p_overload => OVERLOAD,
                         p_in_out => 'IN'
-                    ),
-                    p_max_length=>32767
-                ), chr(10), rpad(chr(10), p_Indent))
+                    )
+                ), chr(10), chr(10) || rpad(' ', p_Indent))
                 || v_Condition_End
                 || chr(10) || '----' || chr(10) 
                 || v_Condition_Start
-            	|| rpad(' ', p_Indent+4)
-				|| replace(apex_string.format(
-					p_message => p_Logging_Finish_Call,
-					p0 => case when OUT_COUNT > 0 then 
-						api_trace.Format_Call_Parameter(
-							p_calling_subprog => CALLING_SUBPROG,
-							p_synonym_name => INITCAP(OBJECT_NAME) || ' output ',
-							p_bind_char => null,
-							p_overload => OVERLOAD,
-							p_in_out => 'OUT'
-						)
-					end 
-					|| case when RETURN_PLS_TYPE IS NOT NULL then 
-						Format_Return_Value(
-							p_Procedure_Name => CALLING_SUBPROG,
-							p_PLS_Type => RETURN_PLS_TYPE, -- returning data type
-							p_Variable_Name => p_Variable_Name
-						)
-					end
-					|| case when OUT_COUNT = 0 and RETURN_PLS_TYPE IS NULL then
-						api_trace.Literal(CALLING_SUBPROG)
-					end,
-					p_max_length=>32767
-				), chr(10), rpad(chr(10), p_Indent))
-				|| v_Condition_End
+                || chr(10) || rpad(' ', p_Indent+4)
+                || replace(replace(
+                    p_Logging_Finish_Call, '%s',
+                    case when OUT_COUNT > 0 then 
+                        api_trace.Format_Call_Parameter(
+                            p_calling_subprog => CALLING_SUBPROG,
+                            p_synonym_name => INITCAP(OBJECT_NAME) || ' output ',
+                            p_bind_char => null,
+                            p_overload => OVERLOAD,
+                            p_in_out => 'OUT'
+                        )
+                    end 
+                    || case when RETURN_PLS_TYPE IS NOT NULL
+                    or RETURN_DATA_TYPE IS NOT NULL then 
+                        Format_Return_Value(
+                            p_Procedure_Name => CALLING_SUBPROG,
+                            p_PLS_Type => RETURN_PLS_TYPE, -- returning data type
+                            p_Data_Type => RETURN_DATA_TYPE,
+                            p_Variable_Name => p_Variable_Name
+                        )
+                    end
+                    || case when OUT_COUNT = 0 and RETURN_PLS_TYPE IS NULL then
+                        api_trace.Literal(CALLING_SUBPROG)
+                    end
+                ), chr(10), chr(10) || rpad(' ', p_Indent))
+                || v_Condition_End
             WHEN p_Compact = 'N' and p_Logging_Start_Enabled = 'N' THEN 
                 v_Condition_Start
-            	|| rpad(' ', p_Indent+4)
-                || replace(apex_string.format(
-                	p_message => p_Logging_API_Call,
-                    p0 => api_trace.Format_Call_Parameter(
+                || chr(10) || rpad(' ', p_Indent+4)
+                || replace(replace(
+                    p_Logging_API_Call, '%s',
+                    api_trace.Format_Call_Parameter(
                         p_calling_subprog => CALLING_SUBPROG,
                         p_bind_char => null,
                         p_overload => OVERLOAD,
                         p_in_out => 'IN/OUT'
                     )
-                    || case when RETURN_PLS_TYPE IS NOT NULL then 
-                    	' || ' 
-                    	|| Format_Return_Value(
-							p_Procedure_Name => null,
-							p_PLS_Type => RETURN_PLS_TYPE, -- returning data type
-							p_Variable_Name => p_Variable_Name
-						)
-					end,
-                    p_max_length=>32767
-                ), chr(10), rpad(chr(10), p_Indent))
-				|| v_Condition_End
+                    || case when RETURN_PLS_TYPE IS NOT NULL 
+                    or RETURN_DATA_TYPE IS NOT NULL then 
+                        chr(10) || rpad(' ', 4) || ' || ' 
+                        || Format_Return_Value(
+                            p_Procedure_Name => null,
+                            p_PLS_Type => RETURN_PLS_TYPE, -- returning data type
+                            p_Data_Type => RETURN_DATA_TYPE,
+                            p_Variable_Name => p_Variable_Name
+                        )
+                    end
+                ), chr(10), chr(10) || rpad(' ', p_Indent))
+                || v_Condition_End
             END LOGGING_CALL
         FROM PARAM_Q
         ORDER BY PACKAGE_NAME,SUBPROGRAM_ID, OVERLOAD;
@@ -1155,7 +1268,7 @@ IS
         v_Clob CLOB;
         v_Comment VARCHAR2(500) := '-- This package was generated by ' || c_Package_Name || ' from Strack Software Development, Berlin, Germany.'
         || chr(10) || '-- It replaces : ' || p_Synonym_Text;
-		v_Timemark NUMBER := dbms_utility.get_time;
+        v_Timemark NUMBER := dbms_utility.get_time;
     BEGIN
         v_Clob := Get_Package_Source(
             p_Package_Name => p_Object_Name,
@@ -1163,7 +1276,7 @@ IS
             p_Editionable  => p_Editionable
         );
         if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- Get_Package_Spec: get package ource');   	
+            Log_Elapsed_Time(v_Timemark, '-- Get_Package_Spec: get package source');    
         end if;
         if p_Object_Owner != p_Dest_Schema then 
           v_Clob := REPLACE(v_Clob, Enquote_Name(p_Object_Owner), Enquote_Name(p_Dest_Schema));
@@ -1183,7 +1296,7 @@ IS
         -- remove empty lines
         v_Clob := REGEXP_REPLACE(v_Clob, chr(10)||'{2,}', chr(10), 1, 0, 'm');
         if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- Get_Package_Spec: normalize source');   	
+            Log_Elapsed_Time(v_Timemark, '-- Get_Package_Spec: normalize source');      
         end if;
         -- add comment
       v_Clob := REGEXP_REPLACE(v_Clob, 
@@ -1191,7 +1304,7 @@ IS
         '\1'||v_Comment||chr(10), 
         1, 1, 'in');
         if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- Get_Package_Spec: added Comments');   	
+            Log_Elapsed_Time(v_Timemark, '-- Get_Package_Spec: added Comments');    
         end if;
         
         return v_Clob; 
@@ -1236,6 +1349,7 @@ IS
                 SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, 
                         IN_OUT, 
                         PLS_TYPE RETURN_PLS_TYPE, 
+                        DATA_TYPE RETURN_DATA_TYPE,
                         CHAR_USED,
                         CASE when TYPE_NAME IS NOT NULL THEN 
                             CASE WHEN DATA_TYPE = 'REF' THEN ' ref ' END
@@ -1245,7 +1359,7 @@ IS
                         ELSE 
                             PLS_TYPE 
                         END RETURN_TYPE,
-                        TYPE_NAME, TYPE_SUBNAME
+                        TYPE_OBJECT_TYPE
                 FROM SYS.ALL_ARGUMENTS  
                 WHERE DATA_LEVEL = 0 
                 AND POSITION = 0
@@ -1265,7 +1379,8 @@ IS
             SELECT PRO.PROCEDURE_NAME, 
                 PRO.SUBPROGRAM_ID, PRO.OVERLOAD,
                 PRO.AGGREGATE, PRO.PIPELINED, PRO.IMPLTYPEOWNER, PRO.IMPLTYPENAME,
-                RET.RETURN_TYPE, RET.TYPE_NAME, RET.TYPE_SUBNAME, RET.RETURN_PLS_TYPE, RET.CHAR_USED,
+                RET.RETURN_TYPE, RET.TYPE_OBJECT_TYPE, 
+                RET.RETURN_PLS_TYPE, RET.RETURN_DATA_TYPE, RET.CHAR_USED,
                 NVL(ARG.ARGS_COUNT,0) ARGS_COUNT,
                 NVL(ARG.OUT_COUNT,0) OUT_COUNT,
                 case when RET.IN_OUT = 'OUT' then 'FUNCTION' else 'PROCEDURE' end PROC_TYPE,
@@ -1343,80 +1458,83 @@ IS
                 v_procedure_name := lower(p_Package_Name||'.'|| v_proc_tbl(ind).PROCEDURE_NAME);
                 -- DBMS_OUTPUT.PUT_LINE (v_calling_subprog);
                 IF p_Logging_Start_Enabled = 'Y' THEN 
-					v_trace_call := chr(9) 
-					|| apex_string.format(
-						p_message => p_Logging_Start_Call,
-						p0 => Format_Call_Parameter( 
-							p_Object_Name => p_Object_Name,
-							p_Object_Owner => p_Object_Owner,
-							p_Procedure_Name => v_proc_tbl(ind).PROCEDURE_NAME,
-							p_Subprogram_ID => v_proc_tbl(ind).SUBPROGRAM_ID,
-							p_calling_subprog => v_calling_subprog,
-							p_synonym_name => v_procedure_name,
-							p_value_max_length => p_value_max_length,
-							p_bind_char => null,
-							p_overload => v_proc_tbl(ind).OVERLOAD,
-							p_in_out => 'IN'
-						), 
-						p_max_length=>32767
-					) || chr(10);
-					v_trace_output := chr(9) 
-					|| apex_string.format(
-						p_message => p_Logging_Finish_Call,
-						p0 => case when v_proc_tbl(ind).OUT_COUNT > 0 then 
-							Format_Call_Parameter( 
-								p_Object_Name => p_Object_Name,
-								p_Object_Owner => p_Object_Owner,
-								p_Procedure_Name => v_proc_tbl(ind).PROCEDURE_NAME,
-								p_Subprogram_ID => v_proc_tbl(ind).SUBPROGRAM_ID,
-								p_calling_subprog => v_calling_subprog,
-								p_synonym_name => v_procedure_name || ' output ',
-								p_value_max_length => p_value_max_length,
-								p_bind_char => null,
-								p_overload => v_proc_tbl(ind).OVERLOAD,
-								p_in_out => 'OUT'
-							)
-						end
-						|| case when v_proc_tbl(ind).RETURN_PLS_TYPE IS NOT NULL then 
-							Format_Return_Value(
-								p_Procedure_Name => v_Procedure_Name,
-								p_PLS_Type => v_proc_tbl(ind).RETURN_PLS_TYPE, -- returning data type
-								p_Variable_Name => p_Variable_Name
-							)
-						end
-						|| case when v_proc_tbl(ind).OUT_COUNT = 0 and v_proc_tbl(ind).RETURN_PLS_TYPE IS NULL then
-							api_trace.Literal(v_Procedure_Name)
-						end, 
-						p_max_length=>32767
-					) || chr(10);
-            	ELSE 
-            		v_trace_call := null;
-					v_trace_output := chr(9) 
-					|| apex_string.format(
-						p_message => p_Logging_API_Call,
-						p0 => Format_Call_Parameter( 
-							p_Object_Name => p_Object_Name,
-							p_Object_Owner => p_Object_Owner,
-							p_Procedure_Name => v_proc_tbl(ind).PROCEDURE_NAME,
-							p_Subprogram_ID => v_proc_tbl(ind).SUBPROGRAM_ID,
-							p_calling_subprog => v_calling_subprog,
-							p_synonym_name => v_procedure_name,
-							p_value_max_length => p_value_max_length,
-							p_bind_char => null,
-							p_overload => v_proc_tbl(ind).OVERLOAD,
-							p_in_out => 'IN/OUT'
-						)
-						|| case when v_proc_tbl(ind).RETURN_PLS_TYPE IS NOT NULL then 
-							' || ' 
-                    		|| Format_Return_Value(
-								p_Procedure_Name => null,
-								p_PLS_Type => v_proc_tbl(ind).RETURN_PLS_TYPE, -- returning data type
-								p_Variable_Name => p_Variable_Name
-							)
-						end, 
-						p_max_length=>32767
-					) || chr(10);					
-				END IF;
+                    v_trace_call := chr(9) 
+                    || replace(
+                        p_Logging_Start_Call, '%s',
+                        Format_Call_Parameter( 
+                            p_Object_Name => p_Object_Name,
+                            p_Object_Owner => p_Object_Owner,
+                            p_Procedure_Name => v_proc_tbl(ind).PROCEDURE_NAME,
+                            p_Subprogram_ID => v_proc_tbl(ind).SUBPROGRAM_ID,
+                            p_calling_subprog => v_calling_subprog,
+                            p_synonym_name => v_procedure_name,
+                            p_value_max_length => p_value_max_length,
+                            p_bind_char => null,
+                            p_overload => v_proc_tbl(ind).OVERLOAD,
+                            p_in_out => 'IN'
+                        )
+                    ) || chr(10);
+                    v_trace_output := chr(9) 
+                    || replace(
+                        p_Logging_Finish_Call, '%s',
+                        case when v_proc_tbl(ind).OUT_COUNT > 0 then 
+                            Format_Call_Parameter( 
+                                p_Object_Name => p_Object_Name,
+                                p_Object_Owner => p_Object_Owner,
+                                p_Procedure_Name => v_proc_tbl(ind).PROCEDURE_NAME,
+                                p_Subprogram_ID => v_proc_tbl(ind).SUBPROGRAM_ID,
+                                p_calling_subprog => v_calling_subprog,
+                                p_synonym_name => v_procedure_name || ' output ',
+                                p_value_max_length => p_value_max_length,
+                                p_bind_char => null,
+                                p_overload => v_proc_tbl(ind).OVERLOAD,
+                                p_in_out => 'OUT'
+                            )
+                        end
+                        || case when v_proc_tbl(ind).RETURN_PLS_TYPE IS NOT NULL 
+                        or v_proc_tbl(ind).TYPE_OBJECT_TYPE IS NOT NULL then 
+                            Format_Return_Value(
+                                p_Procedure_Name => v_Procedure_Name,
+                                p_PLS_Type => v_proc_tbl(ind).RETURN_PLS_TYPE, -- returning data type
+                                p_Data_Type => v_proc_tbl(ind).RETURN_DATA_TYPE,
+                                p_Variable_Name => p_Variable_Name
+                            )
+                        end
+                        || case when v_proc_tbl(ind).OUT_COUNT = 0 
+                        and v_proc_tbl(ind).RETURN_PLS_TYPE IS NULL 
+                        and v_proc_tbl(ind).TYPE_OBJECT_TYPE IS NULL then
+                            api_trace.Literal(v_Procedure_Name)
+                        end
+                    ) || chr(10);
+                ELSE 
+                    v_trace_call := null;
+                    v_trace_output := chr(9) 
+                    || replace(
+                        p_Logging_API_Call, '%s',
+                        Format_Call_Parameter( 
+                            p_Object_Name => p_Object_Name,
+                            p_Object_Owner => p_Object_Owner,
+                            p_Procedure_Name => v_proc_tbl(ind).PROCEDURE_NAME,
+                            p_Subprogram_ID => v_proc_tbl(ind).SUBPROGRAM_ID,
+                            p_calling_subprog => v_calling_subprog,
+                            p_synonym_name => v_procedure_name,
+                            p_value_max_length => p_value_max_length,
+                            p_bind_char => null,
+                            p_overload => v_proc_tbl(ind).OVERLOAD,
+                            p_in_out => 'IN/OUT'
+                        )
+                        || case when v_proc_tbl(ind).RETURN_PLS_TYPE IS NOT NULL 
+                        or v_proc_tbl(ind).TYPE_OBJECT_TYPE IS NOT NULL then 
+                            chr(10) || rpad(' ', 4) || ' || ' 
+                            || Format_Return_Value(
+                                p_Procedure_Name => null,
+                                p_PLS_Type => v_proc_tbl(ind).RETURN_PLS_TYPE, -- returning data type
+                                p_Data_Type => v_proc_tbl(ind).RETURN_DATA_TYPE,
+                                p_Variable_Name => p_Variable_Name
+                            )
+                        end
+                    ) || chr(10);                   
+                END IF;
                 v_sqltext := v_proc_tbl(ind).HEADER;
                 if length(v_sqltext) > 0 then 
                     if v_proc_tbl(ind).PROC_TYPE = 'FUNCTION'
@@ -1437,6 +1555,52 @@ IS
                         || v_trace_output
                         || '    return lv_result;' || chr(10) 
                         || 'end ' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || ';' || chr(10) || chr(10);
+                    elsif v_proc_tbl(ind).PROC_TYPE = 'FUNCTION'
+                    and v_proc_tbl(ind).PIPELINED = 'YES'
+                    and v_proc_tbl(ind).TYPE_OBJECT_TYPE = 'TYPE'
+                    then
+                        v_sqltext := v_sqltext || chr(10) 
+                        || 'is' || chr(10) 
+                        || '    lv_result ' || v_proc_tbl(ind).RETURN_TYPE 
+                        || ';' || chr(10) 
+                        || 'begin' || chr(10) 
+                        || v_trace_call
+                        || '    select cast(multiset(select * from table (' || chr(10) 
+                        || '        ' || v_calling_subprog
+                        || case when v_proc_tbl(ind).ARGS_COUNT > 0 then '(' || v_proc_tbl(ind).CALL_PARAMETER || ')' end || chr(10) 
+                        || '    )) as ' || v_proc_tbl(ind).RETURN_TYPE || ')' || chr(10) 
+                        || '    into lv_result' || chr(10) 
+                        || '    from dual;' || chr(10) 
+                        || '    IF lv_result.FIRST IS NOT NULL THEN' || chr(10) 
+                        || '        FOR ind IN 1 .. lv_result.COUNT LOOP' || chr(10) 
+                        || '            pipe row (lv_result(ind));' || chr(10) 
+                        || '        END LOOP;' || chr(10) 
+                        || '    END IF;' || chr(10) 
+                        || v_trace_output
+                        || 'end ' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || ';' || chr(10) || chr(10);
+                    elsif v_proc_tbl(ind).PROC_TYPE = 'FUNCTION'
+                    and v_proc_tbl(ind).PIPELINED = 'YES'
+                    and v_proc_tbl(ind).TYPE_OBJECT_TYPE = 'PACKAGE'
+                    then
+                        v_sqltext := v_sqltext || chr(10) 
+                        || 'is' || chr(10) 
+                        || '    lv_result ' || v_proc_tbl(ind).RETURN_TYPE 
+                        || ';' || chr(10) 
+                        || 'begin' || chr(10) 
+                        || v_trace_call
+                        || '    select *' || chr(10) 
+                        || '    bulk collect into lv_result' || chr(10) 
+                        || '    from table (' || chr(10) 
+                        || '        ' || v_calling_subprog
+                        || case when v_proc_tbl(ind).ARGS_COUNT > 0 then '(' || v_proc_tbl(ind).CALL_PARAMETER || ')' end || chr(10) 
+                        || '    );' || chr(10) 
+                        || '    IF lv_result.FIRST IS NOT NULL THEN' || chr(10) 
+                        || '        FOR ind IN 1 .. lv_result.COUNT LOOP' || chr(10) 
+                        || '            pipe row (lv_result(ind));' || chr(10) 
+                        || '        END LOOP;' || chr(10) 
+                        || '    END IF;' || chr(10) 
+                        || v_trace_output
+                        || 'end ' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || ';' || chr(10) || chr(10);                    
                     else -- procedures and special function without return value.
                         v_sqltext := v_sqltext || chr(10) 
                         || 'is' || chr(10) 
@@ -1482,7 +1646,7 @@ IS
         v_Grant_Stats VARCHAR2(32767);
         v_Clob CLOB;
         v_Count NUMBER;
-		v_Timemark NUMBER := dbms_utility.get_time;
+        v_Timemark NUMBER := dbms_utility.get_time;
     BEGIN
         DBMS_OUTPUT.ENABLE(NULL);
         Resolve_Synonym (
@@ -1497,7 +1661,7 @@ IS
             p_Editionable => v_Editionable_Out
         );
         if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- Resolve_Synonym ' || p_Dest_Schema || '.' || v_Synonym_Name || ' to ' || v_Package_Owner_Out || '.' || v_Package_Name_Out);   	
+            Log_Elapsed_Time(v_Timemark, '-- Resolve_Synonym ' || p_Dest_Schema || '.' || v_Synonym_Name || ' to ' || v_Package_Owner_Out || '.' || v_Package_Name_Out);    
         end if;
         if v_Package_Name_Out IS NULL then 
             RAISE_APPLICATION_ERROR(-20001, 'The name ' || v_Synonym_Name || ' could not be found.');
@@ -1518,7 +1682,7 @@ IS
             return;
         end if;
         if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- Checked for table or record types');   	
+            Log_Elapsed_Time(v_Timemark, '-- Checked for table or record types');       
         end if;
 
         FOR c_cur IN (
@@ -1547,10 +1711,10 @@ IS
                 AND PRI.Grantee IN (p_Dest_Schema, 'PUBLIC')
                 AND PRI.privilege IN ('EXECUTE', 'SELECT')
             LEFT OUTER JOIN ( -- no object with this name already exists
-            	SELECT DB.REFERENCED_NAME, DB.REFERENCED_OWNER
-            	FROM SYS.ALL_DEPENDENCIES DB
-				WHERE DB.OWNER = p_Dest_Schema
-				AND DB.NAME = DB.REFERENCED_NAME
+                SELECT DB.REFERENCED_NAME, DB.REFERENCED_OWNER
+                FROM SYS.ALL_DEPENDENCIES DB
+                WHERE DB.OWNER = p_Dest_Schema
+                AND DB.NAME = DB.REFERENCED_NAME
             ) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME AND DB.REFERENCED_OWNER = DA.Owner 
             WHERE DA.Owner = v_Package_Owner_Out 
             AND DA.Name = v_Package_Name_Out 
@@ -1569,7 +1733,7 @@ IS
             end if;
         END LOOP;
         if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- Created dependent synonyms');   	
+            Log_Elapsed_Time(v_Timemark, '-- Created dependent synonyms');      
         end if;
         if v_Grant_Stats IS NOT NULL 
         then 
@@ -1589,7 +1753,7 @@ IS
             end if;
         end if;
         if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- dropped local synonym');   	
+            Log_Elapsed_Time(v_Timemark, '-- dropped local synonym');       
         end if;
         -- the package is in an different schema, so a tracing package can be created.
         -- create package header 
@@ -1611,7 +1775,7 @@ IS
             return;
         end if;
         if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- generated package header');   	
+            Log_Elapsed_Time(v_Timemark, '-- generated package header');    
         end if;
         if p_Use_Dbms_Output then
           output_clob (v_Clob|| ';');
@@ -1639,7 +1803,7 @@ IS
             return;
         end if;
         if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- generated package body');   	
+            Log_Elapsed_Time(v_Timemark, '-- generated package body');      
         end if;
         if p_Use_Dbms_Output then
             output_clob (v_Clob);
@@ -1649,7 +1813,7 @@ IS
             EXECUTE IMMEDIATE v_Clob;
         end if;
         if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- Enable completion');   	
+            Log_Elapsed_Time(v_Timemark, '-- Enable completion');       
         end if;
     END Enable;
 
@@ -1674,10 +1838,10 @@ IS
             Enable(
                 p_Package_Name=>c_cur.SYNONYM_NAME, 
                 p_Logging_Start_Enabled => p_Logging_Start_Enabled,
-				p_Logging_Start_Call => p_Logging_Start_Call,
-				p_Logging_Finish_Call => p_Logging_Finish_Call,
-				p_Logging_API_Call => p_Logging_API_Call,
-				p_Variable_Name => p_Variable_Name,
+                p_Logging_Start_Call => p_Logging_Start_Call,
+                p_Logging_Finish_Call => p_Logging_Finish_Call,
+                p_Logging_API_Call => p_Logging_API_Call,
+                p_Variable_Name => p_Variable_Name,
                 p_Use_Dbms_Output=>p_Use_Dbms_Output,
                 p_Do_Execute=>p_Do_Execute);
             exception

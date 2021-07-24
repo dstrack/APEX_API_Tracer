@@ -34,6 +34,8 @@ IS
     RETURN VARCHAR2 DETERMINISTIC;
     FUNCTION Literal_RAW ( p_Value RAW, p_value_max_length PLS_INTEGER DEFAULT 1000 )
     RETURN VARCHAR2 DETERMINISTIC;
+    FUNCTION Literal_PWD ( p_Value VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    RETURN VARCHAR2 DETERMINISTIC;
 
     FUNCTION Format_Call_Parameter(
         p_calling_subprog VARCHAR2,             -- name of the called procedure or function in a package format: package_name.procedure_name
@@ -50,22 +52,22 @@ IS
        the count of the arguments will be checked at runtime.
     */
     FUNCTION Dyn_Log_Call(
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,	-- a format string that is passed to apex_string.format as p_message.
+        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,	-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2; 
     FUNCTION Dyn_Log_Start (
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,-- a format string that is passed to apex_string.format as p_message.
+        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2;
     FUNCTION Dyn_Log_Exit (
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- a format string that is passed to apex_string.format as p_message.
+        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2;
     FUNCTION Dyn_Log_Exception (
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- a format string that is passed to apex_string.format as p_message.
+        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0,                             -- identifier of a overloded funtion in order of occurence.
         p_format_error_function IN VARCHAR2 DEFAULT 'DBMS_UTILITY.FORMAT_ERROR_STACK' -- function for formating for the current error. The output is concatinated to the message.
@@ -82,7 +84,7 @@ IS
     RETURN VARCHAR2 DETERMINISTIC
     IS
     BEGIN
-        RETURN c_Quote || REPLACE(SUBSTR(p_Text, 1, p_value_max_length), c_Quote, c_Quote||c_Quote) || c_Quote ;
+        RETURN c_Quote || replace(substr(p_Text, 1, p_value_max_length), c_Quote, c_Quote||c_Quote) || c_Quote ;
     END Literal;
     
     FUNCTION Literal ( p_Value BLOB, p_value_max_length PLS_INTEGER DEFAULT 1000 )
@@ -111,21 +113,30 @@ IS
           when p_Value then 'true' else 'false' end ;
     END Literal;
 
+    FUNCTION Literal ( p_Value NUMBER, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    RETURN VARCHAR2 DETERMINISTIC
+    IS
+    BEGIN
+        RETURN case when p_Value IS NULL then 'null' 
+        else substr(to_char(p_Value), 1, p_value_max_length) 
+        end;
+    END Literal;
+
     FUNCTION Literal_RAW ( p_Value RAW, p_value_max_length PLS_INTEGER DEFAULT 1000 )
     RETURN VARCHAR2 DETERMINISTIC
     IS
     BEGIN
         RETURN case when p_Value IS NULL then 'null'
-        else 'HEXTORAW(' || c_Quote || SUBSTR(RAWTOHEX(p_Value), 1, p_value_max_length) || c_Quote || ')'
+        else 'HEXTORAW(' || c_Quote || substr(rawtohex(p_Value), 1, p_value_max_length) || c_Quote || ')'
         end;
     END Literal_RAW;
 
-    FUNCTION Literal ( p_Value NUMBER, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal_PWD ( p_Value VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT 1000 )
     RETURN VARCHAR2 DETERMINISTIC
     IS
     BEGIN
-        RETURN case when p_Value IS NULL then 'null' else to_char(p_Value) end ;
-    END Literal;
+        RETURN c_Quote || substr(rpad('X', LENGTH(p_Value), 'X'), 1, p_value_max_length) || c_Quote;
+    END Literal_PWD;
 
     -- build an expression that captures the parameters of an package procedure for logging.
     -- the procedure or function must be listed in the package header.
@@ -141,9 +152,11 @@ IS
         p_in_out VARCHAR2 DEFAULT 'IN/OUT'      -- IN, OUT, IN/OUT. Used to filter the set of procedure arguments that are logged in the message.
     ) RETURN VARCHAR2
     IS
-        PRAGMA UDF;
+		$IF DBMS_DB_VERSION.VERSION >= 12 $THEN
+			PRAGMA UDF;
+		$END
         c_newline VARCHAR2(10) := 'chr(10)'||chr(10);
-        c_argument_per_line CONSTANT NUMBER := 7;
+        c_argument_per_line CONSTANT PLS_INTEGER := 7;
         c_conop VARCHAR2(10) := ' || ';
         v_argument_name VARCHAR2(200);
         v_offset NUMBER;
@@ -201,7 +214,7 @@ IS
                     || case when mod(v_idx-1, c_argument_per_line) = 0 then c_conop || c_newline else chr(10) end
                     || '    ' || c_conop;
                 end if;
-                if v_inout(v_idx) != 0 and p_in_out = 'IN' then -- OUT parameters are not converted to a literal.
+                if v_inout(v_idx) != 0 and p_in_out = 'IN' then -- OUT parameters are not converted to a literal for logging at start of procedure
                     v_result_str := v_result_str 
                     || Literal(
                     	case when v_count > 1 then ', ' end
@@ -217,12 +230,17 @@ IS
                             112, 113)                       -- clob, blob
                         then 
                             c_Package_Name || '.'
-                            || case when v_dtyp(v_idx) = 23 then 'Literal_RAW' else 'Literal' end
+                            || case when v_arg_name(v_idx) in ('P_PASSWORD', 'P_PASS', 'P_WALLET_PWD', 'P_WEB_PASSWORD', 'P_OLD_PASSWORD', 'P_NEW_PASSWORD')
+                            	then 'Literal_PWD'
+                            when v_dtyp(v_idx) = 23 
+                            	then 'Literal_RAW' 
+                            	else 'Literal' 
+                            end
                             || '(' || p_bind_char || v_argument_name 
                             || case when p_value_max_length != 1000 then ', ' || p_value_max_length end
                             || ')'
                         else 
-                            Literal('<datatype '||v_dtyp(v_idx)||' >')
+                            Literal('<datatype '||v_dtyp(v_idx)||'>')
                     end;
                 end if;
             end if;
@@ -242,8 +260,15 @@ IS
        execute with apex_debug: EXECUTE IMMEDIATE api_trace.Dyn_Log_Call USING <param...>
        the count of the arguments will be checked at runtime.
     */
+    FUNCTION Format_Call(p_Logging_Call IN VARCHAR2, p_Call_Parameter IN VARCHAR2) 
+    RETURN VARCHAR2
+    IS
+    BEGIN 
+    	RETURN 'begin ' || replace(p_Logging_Call, '%s', p_Call_Parameter) || ' end;';
+    END Format_Call;
+    
     FUNCTION Dyn_Log_Call(
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,   -- a format string that is passed to apex_string.format as p_message.
+        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,   -- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                      -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                                  -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2
@@ -259,14 +284,14 @@ IS
             p_in_out => 'IN/OUT'
         );
         if p_Logging_Call IS NOT NULL then 
-            return 'begin ' || apex_string.format(p_message=>p_Logging_Call, p0=>v_result_str, p_max_length=>c_format_max_length) || ' end;';
+            return Format_Call(p_Logging_Call=>p_Logging_Call, p_Call_Parameter=>v_result_str);
         else
             return v_result_str;
         end if;
     END Dyn_Log_Call; 
 
     FUNCTION Dyn_Log_Start (
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,-- a format string that is passed to apex_string.format as p_message.
+        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2
@@ -282,14 +307,14 @@ IS
             p_in_out => 'IN'
         );
         if p_Logging_Call IS NOT NULL then 
-            return 'begin ' || apex_string.format(p_message=>p_Logging_Call, p0=>v_result_str, p_max_length=>c_format_max_length) || ' end;';
+            return Format_Call(p_Logging_Call=>p_Logging_Call, p_Call_Parameter=>v_result_str);
         else
             return v_result_str;
         end if;
     END Dyn_Log_Start; 
 
     FUNCTION Dyn_Log_Exit (
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- a format string that is passed to apex_string.format as p_message.
+        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2
@@ -305,14 +330,14 @@ IS
             p_in_out => 'OUT'
         );
         if p_Logging_Call IS NOT NULL then 
-            return 'begin ' || apex_string.format(p_message=>p_Logging_Call, p0=>v_result_str, p_max_length=>c_format_max_length) || ' end;';
+            return Format_Call(p_Logging_Call=>p_Logging_Call, p_Call_Parameter=>v_result_str);
         else
             return v_result_str;
         end if;
     END Dyn_Log_Exit; 
     
     FUNCTION Dyn_Log_Exception (
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- a format string that is passed to apex_string.format as p_message.
+        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0,                             -- identifier of a overloded funtion in order of occurence.
         p_format_error_function IN VARCHAR2 DEFAULT 'DBMS_UTILITY.FORMAT_ERROR_STACK' -- function for formating for the current error. The output is concatinated to the message.
@@ -330,7 +355,7 @@ IS
         )
         || ' || ' || p_format_error_function;
         if p_Logging_Call IS NOT NULL then 
-            return 'begin ' || apex_string.format(p_message=>p_Logging_Call, p0=>v_result_str, p_max_length=>c_format_max_length) || ' end;';
+            return Format_Call(p_Logging_Call=>p_Logging_Call, p_Call_Parameter=>v_result_str);
         else
             return v_result_str;
         end if;
