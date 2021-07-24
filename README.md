@@ -9,7 +9,7 @@ This program can generate a package for tracing automatically when the following
   3. the package defines no record or table types.
   4. the package header is not wrapped.
 
-The enable - procedure will generate a package with the same name as the synonym in your local schema.
+The enable - procedure will generate a tracing-package with the same name as the synonym in your local schema.
 
 The link from your local applications to the synonym will be intercepted by the generated package.
 
@@ -20,6 +20,7 @@ When the Option 'Logging of Procedure Start' is set to Yes, then each function a
  1. A call to APEX_DEBUG.LOG_LOG_MESSAGE to produce log entries with text for valid PL/SQL procedure calls with enquoted parameters, that you can copy and paste into the sql console for testing. Arguments of type IN and IN/OUT are logged.
  2. A call to invocate the original procedure or functions.
  3. A call to APEX_DEBUG.LOG_LONG_MESSAGE to produce log entries for the output values and return values of the invocation. Arguments of type OUT and IN/OUT are logged.
+
 When the Option 'Logging of Procedure Start' is set to No, then each function and procedure consists of:  
 
 1. A call to invocate the original procedure or functions. 
@@ -49,9 +50,9 @@ In the section 'Trace Code for LOCAL packages'
   you can list invocations to the package api_trace for your own local packages.
   The switches 'Compact' and 'Logging of Procedure Start' control the code generation for your need.
   Copy the listed code into your package to enable tracing of your procedures and functions.
-  The generated code uses the api_trace. Literal function to convert the passed values to quoted literals.
+  The generated code uses the api_trace.Literal function to convert the passed values to quoted literals.
   The function api_trace.Literal is overloaded to support many data types. Datatypes that can not be 
-  converted like records are logged with a <datatype x> placeholder. The logged values are truncated to a maximum length.
+  converted like records are logged with a <datatype x> placeholder. The logged values are truncated to a maximum length (1024 by default).
   There is no upper limit for the number of arguments the you can pass the the api_trace logging functions.
   The compact form of the generated code executed directly with the simple passing of the function arguments list.
   The number of arguments will be checked at runtime to match the count of arguments of the current calling function.
@@ -59,7 +60,7 @@ In the section 'Trace Code for LOCAL packages'
 In the section 'Publish Application Objects in other Schema' 
   you can produce a copy of a schema.
   The target schema name should be a new empty schema, that was created in the APEX Admin / Workspace to Schema Assignment page.
-  In the copy tables and views are present as views that access the original tables and views.
+  In the copied schema, tables and views are present as views that access the original tables and views.
   Other objects like packages, functions, procedures, and types are represented as synonyms.
   An application that can run in the original schema will be able to run in the copied schema too.
   
@@ -69,7 +70,7 @@ Use the package_tracer.Enable procedure to start tracing of a package.
 Use the package_tracer.Disable procedure to stop tracing of a package.
 
 # What these procedures do:
-1. enable
+1. enable: 
     detect local packages with the same name that may be overwritten.
     support local synonyms. 
         local synonym is dropped before the package is created.
@@ -87,7 +88,7 @@ Use the package_tracer.Disable procedure to stop tracing of a package.
     execute drop statement for the local package 
     recreate the local synonym when no PUBLIC synonym exists.
 
-3. Dyn_Log_Call_List
+3. Dyn_Log_Call_List:
     For a given package_name generate invocations to the api_trace logging functions. 
     The parameters p_Compact and p_Logging_Start_Enabled control the code generation for you needs.
   
