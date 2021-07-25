@@ -4,7 +4,7 @@ This program can generate a package for tracing automatically when the following
 
   1. the package is accessible to the schema user via a synonym.
   2. the procedure or function is listed in the package header.
-  3. the package defines no record or table types.
+  3. the package defines no record or table types for function arguments
   4. the package header is not wrapped.
 
 The enable procedure will generate a package with the same name as the synonym in your local schema.
@@ -310,7 +310,7 @@ IS
         || 'APEX_ESCAPE,APEX_EXPORT,APEX_ITEM,'
         || 'APEX_JAVASCRIPT,APEX_LANG,APEX_LDAP,APEX_MAIL,APEX_PAGE,APEX_PKG_APP_INSTALL,'
         || 'APEX_REGION,APEX_SESSION,APEX_SPATIAL,APEX_STRING,APEX_THEME,'
-        || 'APEX_UI_DEFAULT_UPDATE,APEX_UTIL,APEX_WEB_SERVICE';
+        || 'APEX_UI_DEFAULT_UPDATE,APEX_UTIL,APEX_WEB_SERVICE,APEX_ZIP';
     begin   
         for cur in (
             select 
@@ -346,12 +346,13 @@ IS
             where Syn.OWNER IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') )
             and SYN.SYNONYM_NAME LIKE p_Search_Name
             and OBJ.OBJECT_TYPE = 'PACKAGE'
-            and NOT EXISTS ( -- package defines no new record types
+            and NOT EXISTS ( -- package defines no new record types for function arguments
                 select 1
                 from SYS.All_Arguments ARG
                 where ARG.TYPE_NAME = ARG.PACKAGE_NAME
                 and ARG.PACKAGE_NAME = SYN.TABLE_NAME
                 and ARG.OWNER = SYN.TABLE_OWNER
+                and (ARG.ARGUMENT_NAME IS NOT NULL or ARG.DATA_TYPE != 'PL/SQL TABLE') -- skip return type
             )
             and exists ( -- package has procedures
                 select 1 
@@ -370,10 +371,10 @@ IS
                 and REGEXP_INSTR(SRC.text, '\s+wrapped\s+', 1, 1, 0, 'i') > 0
                 and line = 1
             )
-            and SYN.SYNONYM_NAME NOT IN ('APEX_DEBUG', -- because package_tracer is dependent on this synonyms
+            and SYN.SYNONYM_NAME NOT IN (
+            	'APEX_DEBUG', -- because package_tracer is dependent on this synonyms
                 'DBMS_DIMENSION', -- PLS-00307: Zu viele Deklarationen von 'VALIDATE_DIMENSION' entsprechen diesem Aufruf
                 'DBMS_SODA_USER_ADMIN', -- PLS-00201
-                -- 'APEX_PLUGIN',
                 'APEX_INSTANCE_ADMIN',
                 'APEX_INSTANCE_REST_ADMIN',
                 'API_TRACE'
@@ -467,29 +468,7 @@ IS
                      AND ERR.TYPE LIKE 'PACKAGE%'
                     ) ERROR_COUNT
                 FROM DEPS D
-                UNION ALL -- enabled loacale packages
-                SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME, 'Y' IS_ENABLED,
-                    NULL GRANT_STATS, 
-                    NULL REVOKE_STATS, 
-                    'CREATE OR REPLACE ' || SYNONYM_STATS || ';' SYNONYM_STATS,
-                    (SELECT COUNT(*) 
-                     FROM SYS.USER_ERRORS ERR
-                     WHERE ERR.NAME = D.SYNONYM_NAME
-                     AND ERR.TYPE LIKE 'PACKAGE%'
-                    ) ERROR_COUNT
-                FROM (
-                    SELECT DEP.NAME SYNONYM_NAME, 
-                            DEP.REFERENCED_NAME PACKAGE_NAME,
-                            DEP.REFERENCED_OWNER PACKAGE_OWNER,
-                            package_tracer.Get_Package_Synonym_Text(DEP.REFERENCED_NAME) SYNONYM_STATS
-                    FROM SYS.USER_DEPENDENCIES DEP
-                    where DEP.TYPE = 'PACKAGE BODY'
-                    and DEP.REFERENCED_TYPE = 'PACKAGE'
-                    and DEP.REFERENCED_NAME = DEP.NAME
-                    and DEP.REFERENCED_OWNER != p_Dest_Schema
-                ) D
-                WHERE SYNONYM_STATS IS NOT NULL
-            ) MAIN
+          ) MAIN
             order by 1
         ) loop 
             pipe row (cur);
@@ -1008,7 +987,7 @@ IS
             ' || api_trace.'
             || case when p_PLS_Type= 'RAW' then 'Literal_RAW' else 'Literal' end
             || '(' || p_Variable_Name || ')'
-        when p_Data_Type = 'TABLE' then 
+        when p_Data_Type IN ('TABLE', 'PL/SQL TABLE') then 
             ' || ' || p_Variable_Name || '.COUNT || '
             || Enquote_Literal(' rows ') 
         end;
@@ -1346,21 +1325,25 @@ IS
         CURSOR all_proc_cur
         IS
             WITH RETURN_Q AS (
-                SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, 
-                        IN_OUT, 
-                        PLS_TYPE RETURN_PLS_TYPE, 
-                        DATA_TYPE RETURN_DATA_TYPE,
-                        CHAR_USED,
-                        CASE when TYPE_NAME IS NOT NULL THEN 
-                            CASE WHEN DATA_TYPE = 'REF' THEN ' ref ' END
-                            || CASE WHEN TYPE_OWNER NOT IN (OWNER, 'PUBLIC') THEN TYPE_OWNER||'.' END 
-                            || TYPE_NAME 
-                            || CASE WHEN TYPE_SUBNAME IS NOT NULL THEN '.'||TYPE_SUBNAME END 
+                SELECT A.PACKAGE_NAME, A.OWNER, A.OBJECT_NAME PROCEDURE_NAME, A.SUBPROGRAM_ID, 
+                        A.IN_OUT, 
+                        A.PLS_TYPE RETURN_PLS_TYPE, 
+                        A.DATA_TYPE RETURN_DATA_TYPE,
+                        A.CHAR_USED,
+                        CASE when A.TYPE_NAME IS NOT NULL THEN 
+                            CASE WHEN A.DATA_TYPE = 'REF' THEN ' ref ' END
+                            || CASE WHEN S.SYNONYM_NAME IS NULL THEN TYPE_OWNER||'.' END 
+                            || A.TYPE_NAME 
+                            || CASE WHEN A.TYPE_SUBNAME IS NOT NULL THEN '.'||A.TYPE_SUBNAME END 
                         ELSE 
-                            PLS_TYPE 
+                            A.PLS_TYPE 
                         END RETURN_TYPE,
-                        TYPE_OBJECT_TYPE
-                FROM SYS.ALL_ARGUMENTS  
+                        A.TYPE_OBJECT_TYPE
+                FROM SYS.ALL_ARGUMENTS A
+                LEFT OUTER JOIN SYS.All_Synonyms S 
+                	ON S.SYNONYM_NAME = A.TYPE_NAME
+					AND S.OWNER IN (p_Dest_Schema, 'PUBLIC')
+					AND S.TABLE_NAME = A.TYPE_NAME
                 WHERE DATA_LEVEL = 0 
                 AND POSITION = 0
                 AND ARGUMENT_NAME IS NULL
@@ -1381,6 +1364,7 @@ IS
                 PRO.AGGREGATE, PRO.PIPELINED, PRO.IMPLTYPEOWNER, PRO.IMPLTYPENAME,
                 RET.RETURN_TYPE, RET.TYPE_OBJECT_TYPE, 
                 RET.RETURN_PLS_TYPE, RET.RETURN_DATA_TYPE, RET.CHAR_USED,
+                RD.RETURN_TYPE DEST_RETURN_TYPE,
                 NVL(ARG.ARGS_COUNT,0) ARGS_COUNT,
                 NVL(ARG.OUT_COUNT,0) OUT_COUNT,
                 case when RET.IN_OUT = 'OUT' then 'FUNCTION' else 'PROCEDURE' end PROC_TYPE,
@@ -1396,11 +1380,16 @@ IS
                         DENSE_RANK() OVER (PARTITION BY PRO.PROCEDURE_NAME, RET.IN_OUT, SIGN(ARG.ARGS_COUNT) ORDER BY PRO.OVERLOAD),
                         'in', 1) HEADER -- find original procedure header with parameter default values
             FROM SYS.ALL_PROCEDURES PRO
-            LEFT OUTER JOIN RETURN_Q RET 
+            LEFT OUTER JOIN RETURN_Q RET -- get return type of functions in source schema.
                     ON PRO.OBJECT_NAME = RET.PACKAGE_NAME
                     AND PRO.OWNER = RET.OWNER
                     AND PRO.PROCEDURE_NAME = RET.PROCEDURE_NAME
                     AND PRO.SUBPROGRAM_ID = RET.SUBPROGRAM_ID
+            LEFT OUTER JOIN RETURN_Q RD -- get return type of functions in destination schema.
+                    ON RD.PACKAGE_NAME = p_Package_Name
+                    AND RD.OWNER = p_Dest_Schema
+                    AND PRO.PROCEDURE_NAME = RD.PROCEDURE_NAME
+                    AND PRO.SUBPROGRAM_ID = RD.SUBPROGRAM_ID
             LEFT OUTER JOIN ARGUMENTS_Q ARG 
                     ON PRO.OBJECT_NAME = ARG.PACKAGE_NAME
                     AND PRO.OWNER = ARG.OWNER
@@ -1540,67 +1529,83 @@ IS
                     if v_proc_tbl(ind).PROC_TYPE = 'FUNCTION'
                     and v_proc_tbl(ind).AGGREGATE = 'NO'
                     and v_proc_tbl(ind).PIPELINED = 'NO'
+                    and (v_proc_tbl(ind).RETURN_TYPE = v_proc_tbl(ind).DEST_RETURN_TYPE OR v_proc_tbl(ind).DEST_RETURN_TYPE IS NULL)
                     then -- normal function with return value; return value is printed.
                         v_sqltext := v_sqltext || chr(10) 
                         || 'is' || chr(10) 
-                        || '    lv_result ' || v_proc_tbl(ind).RETURN_TYPE 
+                        || '    '||p_Variable_Name||' ' || v_proc_tbl(ind).RETURN_TYPE 
                         || case when v_proc_tbl(ind).CHAR_USED != '0' or v_proc_tbl(ind).RETURN_TYPE = 'RAW' 
                             then '(32767)' end 
                         || ';' || chr(10) 
                         || 'begin' || chr(10) 
                         || v_trace_call
-                        || '    lv_result := ' || v_calling_subprog
+                        || '    '||p_Variable_Name||' := ' || v_calling_subprog
                         || case when v_proc_tbl(ind).ARGS_COUNT > 0 then '(' || v_proc_tbl(ind).CALL_PARAMETER || ')' end 
                         || ';' || chr(10) 
                         || v_trace_output
-                        || '    return lv_result;' || chr(10) 
-                        || 'end ' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || ';' || chr(10) || chr(10);
+                        || '    return '||p_Variable_Name||';' || chr(10);
+                    elsif v_proc_tbl(ind).PROC_TYPE = 'FUNCTION'
+                    and v_proc_tbl(ind).PIPELINED = 'NO'
+                    and v_proc_tbl(ind).TYPE_OBJECT_TYPE = 'PACKAGE'
+                    and v_proc_tbl(ind).RETURN_TYPE != v_proc_tbl(ind).DEST_RETURN_TYPE
+                    and v_proc_tbl(ind).RETURN_DATA_TYPE = 'PL/SQL TABLE'
+                    then
+                        v_sqltext := v_sqltext || chr(10) 
+                        || 'is' || chr(10) 
+                        || '    lv_temp ' || v_proc_tbl(ind).RETURN_TYPE || ';' || chr(10) 
+                        || '    '||p_Variable_Name||' ' || v_proc_tbl(ind).DEST_RETURN_TYPE || ';' || chr(10) 
+                        || 'begin' || chr(10) 
+                        || v_trace_call
+                        || '    lv_temp := ' || v_calling_subprog
+                        || case when v_proc_tbl(ind).ARGS_COUNT > 0 then '(' || v_proc_tbl(ind).CALL_PARAMETER || ')' end 
+                        || ';' || chr(10) 
+                        || '    select *' || chr(10) 
+                        || '    bulk collect into '||p_Variable_Name||'' || chr(10) 
+                        || '    from table (lv_temp);' || chr(10) 
+                        || v_trace_output
+                        || '    return '||p_Variable_Name||';' || chr(10);                    
                     elsif v_proc_tbl(ind).PROC_TYPE = 'FUNCTION'
                     and v_proc_tbl(ind).PIPELINED = 'YES'
                     and v_proc_tbl(ind).TYPE_OBJECT_TYPE = 'TYPE'
                     then
                         v_sqltext := v_sqltext || chr(10) 
                         || 'is' || chr(10) 
-                        || '    lv_result ' || v_proc_tbl(ind).RETURN_TYPE 
-                        || ';' || chr(10) 
+                        || '    '||p_Variable_Name||' ' || v_proc_tbl(ind).RETURN_TYPE || ';' || chr(10) 
                         || 'begin' || chr(10) 
                         || v_trace_call
                         || '    select cast(multiset(select * from table (' || chr(10) 
                         || '        ' || v_calling_subprog
                         || case when v_proc_tbl(ind).ARGS_COUNT > 0 then '(' || v_proc_tbl(ind).CALL_PARAMETER || ')' end || chr(10) 
                         || '    )) as ' || v_proc_tbl(ind).RETURN_TYPE || ')' || chr(10) 
-                        || '    into lv_result' || chr(10) 
+                        || '    into '||p_Variable_Name||'' || chr(10) 
                         || '    from dual;' || chr(10) 
-                        || '    IF lv_result.FIRST IS NOT NULL THEN' || chr(10) 
-                        || '        FOR ind IN 1 .. lv_result.COUNT LOOP' || chr(10) 
-                        || '            pipe row (lv_result(ind));' || chr(10) 
+                        || '    IF '||p_Variable_Name||'.FIRST IS NOT NULL THEN' || chr(10) 
+                        || '        FOR ind IN 1 .. '||p_Variable_Name||'.COUNT LOOP' || chr(10) 
+                        || '            pipe row ('||p_Variable_Name||'(ind));' || chr(10) 
                         || '        END LOOP;' || chr(10) 
                         || '    END IF;' || chr(10) 
-                        || v_trace_output
-                        || 'end ' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || ';' || chr(10) || chr(10);
+                        || v_trace_output;
                     elsif v_proc_tbl(ind).PROC_TYPE = 'FUNCTION'
                     and v_proc_tbl(ind).PIPELINED = 'YES'
                     and v_proc_tbl(ind).TYPE_OBJECT_TYPE = 'PACKAGE'
                     then
                         v_sqltext := v_sqltext || chr(10) 
                         || 'is' || chr(10) 
-                        || '    lv_result ' || v_proc_tbl(ind).RETURN_TYPE 
-                        || ';' || chr(10) 
+                        || '    '||p_Variable_Name||' ' || v_proc_tbl(ind).RETURN_TYPE || ';' || chr(10) 
                         || 'begin' || chr(10) 
                         || v_trace_call
                         || '    select *' || chr(10) 
-                        || '    bulk collect into lv_result' || chr(10) 
+                        || '    bulk collect into '||p_Variable_Name||'' || chr(10) 
                         || '    from table (' || chr(10) 
                         || '        ' || v_calling_subprog
                         || case when v_proc_tbl(ind).ARGS_COUNT > 0 then '(' || v_proc_tbl(ind).CALL_PARAMETER || ')' end || chr(10) 
                         || '    );' || chr(10) 
-                        || '    IF lv_result.FIRST IS NOT NULL THEN' || chr(10) 
-                        || '        FOR ind IN 1 .. lv_result.COUNT LOOP' || chr(10) 
-                        || '            pipe row (lv_result(ind));' || chr(10) 
+                        || '    IF '||p_Variable_Name||'.FIRST IS NOT NULL THEN' || chr(10) 
+                        || '        FOR ind IN 1 .. '||p_Variable_Name||'.COUNT LOOP' || chr(10) 
+                        || '            pipe row ('||p_Variable_Name||'(ind));' || chr(10) 
                         || '        END LOOP;' || chr(10) 
                         || '    END IF;' || chr(10) 
-                        || v_trace_output
-                        || 'end ' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || ';' || chr(10) || chr(10);                    
+                        || v_trace_output;                    
                     else -- procedures and special function without return value.
                         v_sqltext := v_sqltext || chr(10) 
                         || 'is' || chr(10) 
@@ -1609,9 +1614,10 @@ IS
                         || '    ' || v_calling_subprog
                         || case when v_proc_tbl(ind).ARGS_COUNT > 0 then '(' || v_proc_tbl(ind).CALL_PARAMETER || ')' end 
                         || ';' || chr(10) 
-                        || v_trace_output
-                        || 'end ' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || ';' || chr(10) || chr(10);
+                        || v_trace_output;
                     end if;
+                    v_sqltext := v_sqltext 
+                    || 'end ' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || ';' || chr(10) || chr(10);
                     dbms_lob.writeappend (v_Clob, length(v_sqltext), v_sqltext);
                 end if;
             END LOOP;
@@ -1675,10 +1681,12 @@ IS
         select COUNT(*) into v_Count
         from SYS.All_Arguments ARG
         where ARG.Type_Name = ARG.Package_Name
-        and Package_Name = v_Package_Name_Out 
-        and owner = v_Package_Owner_Out;
+        and ARG.Package_Name = v_Package_Name_Out 
+        and ARG.owner = v_Package_Owner_Out
+        and (ARG.argument_name IS NOT NULL or ARG.DATA_TYPE != 'PL/SQL TABLE') -- skip return type
+        ;
         if v_Count > 0 then 
-            RAISE_APPLICATION_ERROR(-20003, 'The package ' || v_Synonym_Name || ' is defining table or record types and can´t be traced.');
+            RAISE_APPLICATION_ERROR(-20003, 'The package ' || v_Synonym_Name || ' is defining table or record types for function arguments and can´t be traced.');
             return;
         end if;
         if g_debug then

@@ -27,7 +27,7 @@ prompt APPLICATION 103 - APEX API Tracer
 -- Application Export:
 --   Application:     103
 --   Name:            APEX API Tracer
---   Date and Time:   18:31 Saturday July 24, 2021
+--   Date and Time:   23:37 Sunday July 25, 2021
 --   Exported By:     DIRK
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -105,7 +105,7 @@ wwv_flow_api.create_flow(
 ,p_public_user=>'APEX_PUBLIC_USER'
 ,p_proxy_server=>nvl(wwv_flow_application_install.get_proxy,'')
 ,p_no_proxy_domains=>nvl(wwv_flow_application_install.get_no_proxy_domains,'')
-,p_flow_version=>'Release 1.1.0'
+,p_flow_version=>'Release 1.1.1'
 ,p_flow_status=>'AVAILABLE_W_EDIT_LINK'
 ,p_flow_unavailable_text=>'This application is currently unavailable at this time.'
 ,p_exact_substitutions_only=>'Y'
@@ -118,7 +118,7 @@ wwv_flow_api.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'APEX API Tracer'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210724182946'
+,p_last_upd_yyyymmddhh24miss=>'20210725233312'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>9
 ,p_ui_type_name => null
@@ -11993,7 +11993,7 @@ wwv_flow_api.create_page(
 ,p_page_template_options=>'#DEFAULT#'
 ,p_page_is_public_y_n=>'Y'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210706100806'
+,p_last_upd_yyyymmddhh24miss=>'20210725130435'
 );
 wwv_flow_api.create_page_plug(
  p_id=>wwv_flow_api.id(261929701873419313)
@@ -12004,7 +12004,6 @@ wwv_flow_api.create_page_plug(
 ,p_plug_display_sequence=>10
 ,p_plug_display_point=>'BODY'
 ,p_plug_query_options=>'DERIVED_REPORT_COLUMNS'
-,p_plug_footer=>'User/Password: Demo/Demo2945'
 ,p_attribute_01=>'N'
 ,p_attribute_02=>'TEXT'
 ,p_attribute_03=>'Y'
@@ -12553,7 +12552,7 @@ wwv_flow_api.create_install_script(
 '',
 '  1. the package is accessible to the schema user via a synonym.',
 '  2. the procedure or function is listed in the package header.',
-'  3. the package defines no record or table types.',
+'  3. the package defines no record or table types for function arguments',
 '  4. the package header is not wrapped.',
 '',
 'The enable procedure will generate a package with the same name as the synonym in your local schema.',
@@ -12859,7 +12858,7 @@ wwv_flow_api.create_install_script(
 '        || ''APEX_ESCAPE,APEX_EXPORT,APEX_ITEM,''',
 '        || ''APEX_JAVASCRIPT,APEX_LANG,APEX_LDAP,APEX_MAIL,APEX_PAGE,APEX_PKG_APP_INSTALL,''',
 '        || ''APEX_REGION,APEX_SESSION,APEX_SPATIAL,APEX_STRING,APEX_THEME,''',
-'        || ''APEX_UI_DEFAULT_UPDATE,APEX_UTIL,APEX_WEB_SERVICE'';',
+'        || ''APEX_UI_DEFAULT_UPDATE,APEX_UTIL,APEX_WEB_SERVICE,APEX_ZIP'';',
 '    begin   ',
 '        for cur in (',
 '            select ',
@@ -12895,12 +12894,13 @@ wwv_flow_api.create_install_script(
 '            where Syn.OWNER IN (''PUBLIC'', SYS_CONTEXT(''USERENV'', ''CURRENT_SCHEMA'') )',
 '            and SYN.SYNONYM_NAME LIKE p_Search_Name',
 '            and OBJ.OBJECT_TYPE = ''PACKAGE''',
-'            and NOT EXISTS ( -- package defines no new record types',
+'            and NOT EXISTS ( -- package defines no new record types for function arguments',
 '                select 1',
 '                from SYS.All_Arguments ARG',
 '                where ARG.TYPE_NAME = ARG.PACKAGE_NAME',
 '                and ARG.PACKAGE_NAME = SYN.TABLE_NAME',
 '                and ARG.OWNER = SYN.TABLE_OWNER',
+'                and (ARG.ARGUMENT_NAME IS NOT NULL or ARG.DATA_TYPE != ''PL/SQL TABLE'') -- skip return type',
 '            )',
 '            and exists ( -- package has procedures',
 '                select 1 ',
@@ -12919,10 +12919,10 @@ wwv_flow_api.create_install_script(
 '                and REGEXP_INSTR(SRC.text, ''\s+wrapped\s+'', 1, 1, 0, ''i'') > 0',
 '                and line = 1',
 '            )',
-'            and SYN.SYNONYM_NAME NOT IN (''APEX_DEBUG'', -- because package_tracer is dependent on this synonyms',
+'            and SYN.SYNONYM_NAME NOT IN (',
+'            	''APEX_DEBUG'', -- because package_tracer is dependent on this synonyms',
 '                ''DBMS_DIMENSION'', -- PLS-00307: Zu viele Deklarationen von ''VALIDATE_DIMENSION'' entsprechen diesem Aufruf',
 '                ''DBMS_SODA_USER_ADMIN'', -- PLS-00201',
-'                -- ''APEX_PLUGIN'',',
 '                ''APEX_INSTANCE_ADMIN'',',
 '                ''APEX_INSTANCE_REST_ADMIN'',',
 '                ''API_TRACE''',
@@ -12949,13 +12949,13 @@ wwv_flow_api.create_install_script(
 '                FROM table(get_Packages_List) SYN',
 '                LEFT OUTER JOIN (',
 '                    SELECT DA.Owner Object_Owner, DA.Name Object_Name,',
-'                        case when Pri.Privilege IS NULL and DA.referenced_Owner != ''PUBLIC'' then ',
+'                        case when PRI.Privilege IS NULL and DA.referenced_Owner != ''PUBLIC'' then ',
 '                            ''GRANT '' || case when OBJ.OBJECT_TYPE IN (''TABLE'', ''VIEW'') then ''SELECT'' else ''EXECUTE'' end ',
 '                            || '' ON '' || DA.referenced_Owner || ''.'' || DA.referenced_Name ',
 '                            || '' TO '' || p_Dest_Schema  ',
 '                        end GRANT_STAT,',
-'                        case when Pri.Privilege IS NULL and DA.referenced_Owner != ''PUBLIC'' then ',
-'                            ''REVOKE '' || case when OBJ.OBJECT_TYPE IN (''TABLE'', ''VIEW'') then ''SELECT'' else ''EXECUTE'' end ',
+'                        case when PRI.Privilege IS NOT NULL and PRI.Grantee = p_Dest_Schema then ',
+'                            ''REVOKE '' || PRI.Privilege',
 '                            || '' ON '' || DA.referenced_Owner || ''.'' || DA.referenced_Name ',
 '                            || '' FROM '' || p_Dest_Schema ',
 '                        end REVOKE_STAT,',
@@ -13016,29 +13016,7 @@ wwv_flow_api.create_install_script(
 '                     AND ERR.TYPE LIKE ''PACKAGE%''',
 '                    ) ERROR_COUNT',
 '                FROM DEPS D',
-'                UNION ALL -- enabled loacale packages',
-'                SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME, ''Y'' IS_ENABLED,',
-'                    NULL GRANT_STATS, ',
-'                    NULL REVOKE_STATS, ',
-'                    ''CREATE OR REPLACE '' || SYNONYM_STATS || '';'' SYNONYM_STATS,',
-'                    (SELECT COUNT(*) ',
-'                     FROM SYS.USER_ERRORS ERR',
-'                     WHERE ERR.NAME = D.SYNONYM_NAME',
-'                     AND ERR.TYPE LIKE ''PACKAGE%''',
-'                    ) ERROR_COUNT',
-'                FROM (',
-'                    SELECT DEP.NAME SYNONYM_NAME, ',
-'                            DEP.REFERENCED_NAME PACKAGE_NAME,',
-'                            DEP.REFERENCED_OWNER PACKAGE_OWNER,',
-'                            package_tracer.Get_Package_Synonym_Text(DEP.REFERENCED_NAME) SYNONYM_STATS',
-'                    FROM SYS.USER_DEPENDENCIES DEP',
-'                    where DEP.TYPE = ''PACKAGE BODY''',
-'                    and DEP.REFERENCED_TYPE = ''PACKAGE''',
-'                    and DEP.REFERENCED_NAME = DEP.NAME',
-'                    and DEP.REFERENCED_OWNER != p_Dest_Schema',
-'                ) D',
-'                WHERE SYNONYM_STATS IS NOT NULL',
-'            ) MAIN',
+'          ) MAIN',
 '            order by 1',
 '        ) loop ',
 '            pipe row (cur);',
@@ -13060,13 +13038,13 @@ wwv_flow_api.create_install_script(
 '                FROM table(get_APEX_Packages_List) SYN',
 '                LEFT OUTER JOIN (',
 '                    SELECT DA.Owner Object_Owner, DA.Name Object_Name,',
-'                        case when Pri.Privilege IS NULL and DA.referenced_Owner != ''PUBLIC'' then ',
+'                        case when PRI.Privilege IS NULL and DA.referenced_Owner != ''PUBLIC'' then ',
 '                            ''GRANT '' || case when OBJ.OBJECT_TYPE IN (''TABLE'', ''VIEW'') then ''SELECT'' else ''EXECUTE'' end ',
 '                            || '' ON '' || DA.referenced_Owner || ''.'' || DA.referenced_Name ',
 '                            || '' TO '' || v_Dest_Schema',
 '                        end GRANT_STAT,',
-'                        case when Pri.Privilege IS NULL and DA.referenced_Owner != ''PUBLIC'' then',
-'                            ''REVOKE '' || case when OBJ.OBJECT_TYPE IN (''TABLE'', ''VIEW'') then ''SELECT'' else ''EXECUTE'' end ',
+'                        case when PRI.Privilege IS NOT NULL and PRI.Grantee = v_Dest_Schema then',
+'                            ''REVOKE '' || PRI.Privilege',
 '                            || '' ON ''|| DA.referenced_Owner || ''.'' || DA.referenced_Name ',
 '                            || '' FROM '' || v_Dest_Schema ',
 '                        end REVOKE_STAT,',
@@ -13183,15 +13161,7 @@ wwv_flow_api.create_install_script(
 '                    SELECT ''SELECT''',
 '                        || CASE WHEN TR.PRIVS IS NOT NULL THEN '', '' || TR.PRIVS',
 '                        ELSE ',
-'                            CASE WHEN UPDATABLE > 0  AND NVL(D.FORE'))
-);
-end;
-/
-begin
-wwv_flow_api.append_to_install_script(
- p_id=>wwv_flow_api.id(261939746109436819)
-,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'IGN_DEPS_CNT,0) = 0 THEN '', UPDATE'' END',
+'                            CASE WHEN UPDATABLE > 0  AND NVL(D.FOREIGN_DEPS_CNT,0) = 0 THEN '', UPDATE'' END',
 '                            || CASE WHEN INSERTABLE > 0 AND NVL(D.FOREIGN_DEPS_CNT,0) = 0 THEN '', INSERT'' END',
 '                            || CASE WHEN DELETABLE > 0  AND NVL(D.FOREIGN_DEPS_CNT,0) = 0 THEN '', DELETE '' END ',
 '                        END PRIVS,',
@@ -13210,7 +13180,15 @@ wwv_flow_api.append_to_install_script(
 '                        )',
 '                        GROUP BY TABLE_NAME, OWNER',
 '                    ) T LEFT OUTER JOIN (',
-'                    -- when a view is accessing other foreign view, then is view has SELECT-only access',
+'              '))
+);
+end;
+/
+begin
+wwv_flow_api.append_to_install_script(
+ p_id=>wwv_flow_api.id(261939746109436819)
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'      -- when a view is accessing other foreign view, then is view has SELECT-only access',
 '                        SELECT D.NAME, COUNT(*) FOREIGN_DEPS_CNT',
 '                        FROM SYS.USER_DEPENDENCIES D',
 '                        WHERE D.TYPE = ''VIEW''',
@@ -13565,7 +13543,7 @@ wwv_flow_api.append_to_install_script(
 '            '' || api_trace.''',
 '            || case when p_PLS_Type= ''RAW'' then ''Literal_RAW'' else ''Literal'' end',
 '            || ''('' || p_Variable_Name || '')''',
-'        when p_Data_Type = ''TABLE'' then ',
+'        when p_Data_Type IN (''TABLE'', ''PL/SQL TABLE'') then ',
 '            '' || '' || p_Variable_Name || ''.COUNT || ''',
 '            || Enquote_Literal('' rows '') ',
 '        end;',
@@ -13801,16 +13779,7 @@ wwv_flow_api.append_to_install_script(
 '            if cur.LINE = 1 then ',
 '                v_SQLText := REGEXP_REPLACE(cur.TEXT, ''.*?package\s+.*?"{0,1}''||p_Package_Name||''"{0,1}'', '''',  1, 1, ''in'');',
 '                if INSTR(v_SQLText, ''wrapped'') > 0 then ',
-'                    retu'))
-);
-null;
-end;
-/
-begin
-wwv_flow_api.append_to_install_script(
- p_id=>wwv_flow_api.id(261939746109436819)
-,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'rn NULL;',
+'                    return NULL;',
 '                end if;',
 '            else ',
 '                v_SQLText := cur.TEXT;',
@@ -13841,7 +13810,16 @@ wwv_flow_api.append_to_install_script(
 '            p_Package_Owner => p_Object_Owner,',
 '            p_Editionable  => p_Editionable',
 '        );',
-'        if g_debug then',
+'        if g_de'))
+);
+null;
+end;
+/
+begin
+wwv_flow_api.append_to_install_script(
+ p_id=>wwv_flow_api.id(261939746109436819)
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'bug then',
 '            Log_Elapsed_Time(v_Timemark, ''-- Get_Package_Spec: get package source'');    ',
 '        end if;',
 '        if p_Object_Owner != p_Dest_Schema then ',
@@ -13912,21 +13890,25 @@ wwv_flow_api.append_to_install_script(
 '        CURSOR all_proc_cur',
 '        IS',
 '            WITH RETURN_Q AS (',
-'                SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, ',
-'                        IN_OUT, ',
-'                        PLS_TYPE RETURN_PLS_TYPE, ',
-'                        DATA_TYPE RETURN_DATA_TYPE,',
-'                        CHAR_USED,',
-'                        CASE when TYPE_NAME IS NOT NULL THEN ',
-'                            CASE WHEN DATA_TYPE = ''REF'' THEN '' ref '' END',
-'                            || CASE WHEN TYPE_OWNER NOT IN (OWNER, ''PUBLIC'') THEN TYPE_OWNER||''.'' END ',
-'                            || TYPE_NAME ',
-'                            || CASE WHEN TYPE_SUBNAME IS NOT NULL THEN ''.''||TYPE_SUBNAME END ',
+'                SELECT A.PACKAGE_NAME, A.OWNER, A.OBJECT_NAME PROCEDURE_NAME, A.SUBPROGRAM_ID, ',
+'                        A.IN_OUT, ',
+'                        A.PLS_TYPE RETURN_PLS_TYPE, ',
+'                        A.DATA_TYPE RETURN_DATA_TYPE,',
+'                        A.CHAR_USED,',
+'                        CASE when A.TYPE_NAME IS NOT NULL THEN ',
+'                            CASE WHEN A.DATA_TYPE = ''REF'' THEN '' ref '' END',
+'                            || CASE WHEN S.SYNONYM_NAME IS NULL THEN TYPE_OWNER||''.'' END ',
+'                            || A.TYPE_NAME ',
+'                            || CASE WHEN A.TYPE_SUBNAME IS NOT NULL THEN ''.''||A.TYPE_SUBNAME END ',
 '                        ELSE ',
-'                            PLS_TYPE ',
+'                            A.PLS_TYPE ',
 '                        END RETURN_TYPE,',
-'                        TYPE_OBJECT_TYPE',
-'                FROM SYS.ALL_ARGUMENTS  ',
+'                        A.TYPE_OBJECT_TYPE',
+'                FROM SYS.ALL_ARGUMENTS A',
+'                LEFT OUTER JOIN SYS.All_Synonyms S ',
+'                	ON S.SYNONYM_NAME = A.TYPE_NAME',
+'					AND S.OWNER IN (p_Dest_Schema, ''PUBLIC'')',
+'					AND S.TABLE_NAME = A.TYPE_NAME',
 '                WHERE DATA_LEVEL = 0 ',
 '                AND POSITION = 0',
 '                AND ARGUMENT_NAME IS NULL',
@@ -13947,6 +13929,7 @@ wwv_flow_api.append_to_install_script(
 '                PRO.AGGREGATE, PRO.PIPELINED, PRO.IMPLTYPEOWNER, PRO.IMPLTYPENAME,',
 '                RET.RETURN_TYPE, RET.TYPE_OBJECT_TYPE, ',
 '                RET.RETURN_PLS_TYPE, RET.RETURN_DATA_TYPE, RET.CHAR_USED,',
+'                RD.RETURN_TYPE DEST_RETURN_TYPE,',
 '                NVL(ARG.ARGS_COUNT,0) ARGS_COUNT,',
 '                NVL(ARG.OUT_COUNT,0) OUT_COUNT,',
 '                case when RET.IN_OUT = ''OUT'' then ''FUNCTION'' else ''PROCEDURE'' end PROC_TYPE,',
@@ -13962,11 +13945,16 @@ wwv_flow_api.append_to_install_script(
 '                        DENSE_RANK() OVER (PARTITION BY PRO.PROCEDURE_NAME, RET.IN_OUT, SIGN(ARG.ARGS_COUNT) ORDER BY PRO.OVERLOAD),',
 '                        ''in'', 1) HEADER -- find original procedure header with parameter default values',
 '            FROM SYS.ALL_PROCEDURES PRO',
-'            LEFT OUTER JOIN RETURN_Q RET ',
+'            LEFT OUTER JOIN RETURN_Q RET -- get return type of functions in source schema.',
 '                    ON PRO.OBJECT_NAME = RET.PACKAGE_NAME',
 '                    AND PRO.OWNER = RET.OWNER',
 '                    AND PRO.PROCEDURE_NAME = RET.PROCEDURE_NAME',
 '                    AND PRO.SUBPROGRAM_ID = RET.SUBPROGRAM_ID',
+'            LEFT OUTER JOIN RETURN_Q RD -- get return type of functions in destination schema.',
+'                    ON RD.PACKAGE_NAME = p_Package_Name',
+'                    AND RD.OWNER = p_Dest_Schema',
+'                    AND PRO.PROCEDURE_NAME = RD.PROCEDURE_NAME',
+'                    AND PRO.SUBPROGRAM_ID = RD.SUBPROGRAM_ID',
 '            LEFT OUTER JOIN ARGUMENTS_Q ARG ',
 '                    ON PRO.OBJECT_NAME = ARG.PACKAGE_NAME',
 '                    AND PRO.OWNER = ARG.OWNER',
@@ -14106,67 +14094,83 @@ wwv_flow_api.append_to_install_script(
 '                    if v_proc_tbl(ind).PROC_TYPE = ''FUNCTION''',
 '                    and v_proc_tbl(ind).AGGREGATE = ''NO''',
 '                    and v_proc_tbl(ind).PIPELINED = ''NO''',
+'                    and (v_proc_tbl(ind).RETURN_TYPE = v_proc_tbl(ind).DEST_RETURN_TYPE OR v_proc_tbl(ind).DEST_RETURN_TYPE IS NULL)',
 '                    then -- normal function with return value; return value is printed.',
 '                        v_sqltext := v_sqltext || chr(10) ',
 '                        || ''is'' || chr(10) ',
-'                        || ''    lv_result '' || v_proc_tbl(ind).RETURN_TYPE ',
+'                        || ''    ''||p_Variable_Name||'' '' || v_proc_tbl(ind).RETURN_TYPE ',
 '                        || case when v_proc_tbl(ind).CHAR_USED != ''0'' or v_proc_tbl(ind).RETURN_TYPE = ''RAW'' ',
 '                            then ''(32767)'' end ',
 '                        || '';'' || chr(10) ',
 '                        || ''begin'' || chr(10) ',
 '                        || v_trace_call',
-'                        || ''    lv_result := '' || v_calling_subprog',
+'                        || ''    ''||p_Variable_Name||'' := '' || v_calling_subprog',
 '                        || case when v_proc_tbl(ind).ARGS_COUNT > 0 then ''('' || v_proc_tbl(ind).CALL_PARAMETER || '')'' end ',
 '                        || '';'' || chr(10) ',
 '                        || v_trace_output',
-'                        || ''    return lv_result;'' || chr(10) ',
-'                        || ''end '' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || '';'' || chr(10) || chr(10);',
+'                        || ''    return ''||p_Variable_Name||'';'' || chr(10);',
+'                    elsif v_proc_tbl(ind).PROC_TYPE = ''FUNCTION''',
+'                    and v_proc_tbl(ind).PIPELINED = ''NO''',
+'                    and v_proc_tbl(ind).TYPE_OBJECT_TYPE = ''PACKAGE''',
+'                    and v_proc_tbl(ind).RETURN_TYPE != v_proc_tbl(ind).DEST_RETURN_TYPE',
+'                    and v_proc_tbl(ind).RETURN_DATA_TYPE = ''PL/SQL TABLE''',
+'                    then',
+'                        v_sqltext := v_sqltext || chr(10) ',
+'                        || ''is'' || chr(10) ',
+'                        || ''    lv_temp '' || v_proc_tbl(ind).RETURN_TYPE || '';'' || chr(10) ',
+'                        || ''    ''||p_Variable_Name||'' '' || v_proc_tbl(ind).DEST_RETURN_TYPE || '';'' || chr(10) ',
+'                        || ''begin'' || chr(10) ',
+'                        || v_trace_call',
+'                        || ''    lv_temp := '' || v_calling_subprog',
+'                        || case when v_proc_tbl(ind).ARGS_COUNT > 0 then ''('' || v_proc_tbl(ind).CALL_PARAMETER || '')'' end ',
+'                        || '';'' || chr(10) ',
+'                        || ''    select *'' || chr(10) ',
+'                        || ''    bulk collect into ''||p_Variable_Name||'''' || chr(10) ',
+'                        || ''    from table (lv_temp);'' || chr(10) ',
+'                        || v_trace_output',
+'                        || ''    return ''||p_Variable_Name||'';'' || chr(10);                    ',
 '                    elsif v_proc_tbl(ind).PROC_TYPE = ''FUNCTION''',
 '                    and v_proc_tbl(ind).PIPELINED = ''YES''',
 '                    and v_proc_tbl(ind).TYPE_OBJECT_TYPE = ''TYPE''',
 '                    then',
 '                        v_sqltext := v_sqltext || chr(10) ',
 '                        || ''is'' || chr(10) ',
-'                        || ''    lv_result '' || v_proc_tbl(ind).RETURN_TYPE ',
-'                        || '';'' || chr(10) ',
+'                        || ''    ''||p_Variable_Name||'' '' || v_proc_tbl(ind).RETURN_TYPE || '';'' || chr(10) ',
 '                        || ''begin'' || chr(10) ',
 '                        || v_trace_call',
 '                        || ''    select cast(multiset(select * from table ('' || chr(10) ',
 '                        || ''        '' || v_calling_subprog',
 '                        || case when v_proc_tbl(ind).ARGS_COUNT > 0 then ''('' || v_proc_tbl(ind).CALL_PARAMETER || '')'' end || chr(10) ',
 '                        || ''    )) as '' || v_proc_tbl(ind).RETURN_TYPE || '')'' || chr(10) ',
-'                        || ''    into lv_result'' || chr(10) ',
+'                        || ''    into ''||p_Variable_Name||'''' || chr(10) ',
 '                        || ''    from dual;'' || chr(10) ',
-'                        || ''    IF lv_result.FIRST IS NOT NULL THEN'' || chr(10) ',
-'                        || ''        FOR ind IN 1 .. lv_result.COUNT LOOP'' || chr(10) ',
-'                        || ''            pipe row (lv_result(ind));'' || chr(10) ',
+'                        || ''    IF ''||p_Variable_Name||''.FIRST IS NOT NULL THEN'' || chr(10) ',
+'                        || ''        FOR ind IN 1 .. ''||p_Variable_Name||''.COUNT LOOP'' || chr(10) ',
+'                        || ''            pipe row (''||p_Variable_Name||''(ind));'' || chr(10) ',
 '                        || ''        END LOOP;'' || chr(10) ',
 '                        || ''    END IF;'' || chr(10) ',
-'                        || v_trace_output',
-'                        || ''end '' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || '';'' || chr(10) || chr(10);',
+'                        || v_trace_output;',
 '                    elsif v_proc_tbl(ind).PROC_TYPE = ''FUNCTION''',
 '                    and v_proc_tbl(ind).PIPELINED = ''YES''',
 '                    and v_proc_tbl(ind).TYPE_OBJECT_TYPE = ''PACKAGE''',
 '                    then',
 '                        v_sqltext := v_sqltext || chr(10) ',
 '                        || ''is'' || chr(10) ',
-'                        || ''    lv_result '' || v_proc_tbl(ind).RETURN_TYPE ',
-'                        || '';'' || chr(10) ',
+'                        || ''    ''||p_Variable_Name||'' '' || v_proc_tbl(ind).RETURN_TYPE || '';'' || chr(10) ',
 '                        || ''begin'' || chr(10) ',
 '                        || v_trace_call',
 '                        || ''    select *'' || chr(10) ',
-'                        || ''    bulk collect into lv_result'' || chr(10) ',
+'                        || ''    bulk collect into ''||p_Variable_Name||'''' || chr(10) ',
 '                        || ''    from table ('' || chr(10) ',
 '                        || ''        '' || v_calling_subprog',
 '                        || case when v_proc_tbl(ind).ARGS_COUNT > 0 then ''('' || v_proc_tbl(ind).CALL_PARAMETER || '')'' end || chr(10) ',
 '                        || ''    );'' || chr(10) ',
-'                        || ''    IF lv_result.FIRST IS NOT NULL THEN'' || chr(10) ',
-'                        || ''        FOR ind IN 1 .. lv_result.COUNT LOOP'' || chr(10) ',
-'                        || ''            pipe row (lv_result(ind));'' || chr(10) ',
+'                        || ''    IF ''||p_Variable_Name||''.FIRST IS NOT NULL THEN'' || chr(10) ',
+'                        || ''        FOR ind IN 1 .. ''||p_Variable_Name||''.COUNT LOOP'' || chr(10) ',
+'                        || ''            pipe row (''||p_Variable_Name||''(ind));'' || chr(10) ',
 '                        || ''        END LOOP;'' || chr(10) ',
 '                        || ''    END IF;'' || chr(10) ',
-'                        || v_trace_output',
-'                        || ''end '' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || '';'' || chr(10) || chr(10);                    ',
+'                        || v_trace_output;                    ',
 '                    else -- procedures and special function without return value.',
 '                        v_sqltext := v_sqltext || chr(10) ',
 '                        || ''is'' || chr(10) ',
@@ -14175,9 +14179,10 @@ wwv_flow_api.append_to_install_script(
 '                        || ''    '' || v_calling_subprog',
 '                        || case when v_proc_tbl(ind).ARGS_COUNT > 0 then ''('' || v_proc_tbl(ind).CALL_PARAMETER || '')'' end ',
 '                        || '';'' || chr(10) ',
-'                        || v_trace_output',
-'                        || ''end '' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || '';'' || chr(10) || chr(10);',
+'                        || v_trace_output;',
 '                    end if;',
+'                    v_sqltext := v_sqltext ',
+'                    || ''end '' || lower(v_proc_tbl(ind).PROCEDURE_NAME) || '';'' || chr(10) || chr(10);',
 '                    dbms_lob.writeappend (v_Clob, length(v_sqltext), v_sqltext);',
 '                end if;',
 '            END LOOP;',
@@ -14241,10 +14246,12 @@ wwv_flow_api.append_to_install_script(
 '        select COUNT(*) into v_Count',
 '        from SYS.All_Arguments ARG',
 '        where ARG.Type_Name = ARG.Package_Name',
-'        and Package_Name = v_Package_Name_Out ',
-'        and owner = v_Package_Owner_Out;',
+'        and ARG.Package_Name = v_Package_Name_Out ',
+'        and ARG.owner = v_Package_Owner_Out',
+'        and (ARG.argument_name IS NOT NULL or ARG.DATA_TYPE != ''PL/SQL TABLE'') -- skip return type',
+'        ;',
 '        if v_Count > 0 then ',
-unistr('            RAISE_APPLICATION_ERROR(-20003, ''The package '' || v_Synonym_Name || '' is defining table or record types and can\00B4t be traced.'');'),
+unistr('            RAISE_APPLICATION_ERROR(-20003, ''The package '' || v_Synonym_Name || '' is defining table or record types for function arguments and can\00B4t be traced.'');'),
 '            return;',
 '        end if;',
 '        if g_debug then',
@@ -14384,7 +14391,16 @@ unistr('            RAISE_APPLICATION_ERROR(-20003, ''The package '' || v_Synony
 '    END Enable;',
 '',
 '    PROCEDURE Enable_APEX (',
-'        p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT(''USERENV'', ''CURRENT_SCHEMA''),',
+'        p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('''))
+);
+null;
+end;
+/
+begin
+wwv_flow_api.append_to_install_script(
+ p_id=>wwv_flow_api.id(261939746109436819)
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'USERENV'', ''CURRENT_SCHEMA''),',
 '        p_Logging_Start_Enabled VARCHAR2 DEFAULT ''N'', --Y/N',
 '        p_Logging_Start_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Start_Call,',
 '        p_Logging_Finish_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Exit_Call,',
@@ -14404,16 +14420,7 @@ unistr('            RAISE_APPLICATION_ERROR(-20003, ''The package '' || v_Synony
 '            Enable(',
 '                p_Package_Name=>c_cur.SYNONYM_NAME, ',
 '                p_Logging_Start_Enabled => p_Logging_Start_Enabled,',
-'                p_Logging_Start_C'))
-);
-null;
-end;
-/
-begin
-wwv_flow_api.append_to_install_script(
- p_id=>wwv_flow_api.id(261939746109436819)
-,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'all => p_Logging_Start_Call,',
+'                p_Logging_Start_Call => p_Logging_Start_Call,',
 '                p_Logging_Finish_Call => p_Logging_Finish_Call,',
 '                p_Logging_API_Call => p_Logging_API_Call,',
 '                p_Variable_Name => p_Variable_Name,',
