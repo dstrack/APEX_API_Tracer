@@ -54,6 +54,7 @@ GRANT CREATE ANY SYNONYM TO <schema_name>;
 GRANT DROP ANY SYNONYM TO <schema_name>;
 GRANT CREATE ANY VIEW TO <schema_name>;
 GRANT DROP ANY VIEW TO <schema_name>;
+GRANT MERGE ANY VIEW TO <schema_name>;
 
 */
 
@@ -81,7 +82,7 @@ IS
         Grant_Stat      VARCHAR2(1000),
         Synonym_Stat    VARCHAR2(1000),
         Grantable       VARCHAR2(3),
-        Privilage       VARCHAR2(1000),
+        Privilege       VARCHAR2(1000),
         Synonym_Owner   VARCHAR2(128)
     );
     TYPE tab_dependent_grants IS TABLE OF rec_dependent_grants;
@@ -208,6 +209,19 @@ IS
         p_Package_Owner IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
     ) RETURN VARCHAR2;
 
+    TYPE rec_record_fields IS RECORD (
+    	Type_name 		VARCHAR2(128),
+    	Item_Name		VARCHAR2(128),
+    	Item_Type		VARCHAR2(128),
+    	Nested_Table	VARCHAR2(1)
+    );
+    TYPE tab_record_fields IS TABLE OF rec_record_fields;
+    -- list record and table types of a package
+    FUNCTION Pipe_Record_types (
+        p_Package_Name IN VARCHAR2,
+        p_Package_Owner IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
+    ) RETURN tab_record_fields PIPELINED;
+    
     PROCEDURE Enable (
         p_Package_Name IN VARCHAR2,
         p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
@@ -306,10 +320,10 @@ IS
     IS 
         c_APEX_Packages CONSTANT VARCHAR2(2000) := 
         'APEX_ACL,APEX_APPLICATION_INSTALL,APEX_APP_SETTING,APEX_AUTHENTICATION,'
-        || 'APEX_AUTHORIZATION,APEX_COLLECTION,APEX_CREDENTIAL,APEX_CSS,APEX_CUSTOM_AUTH,'
-        || 'APEX_ESCAPE,APEX_EXPORT,APEX_ITEM,'
+        || 'APEX_AUTHORIZATION,APEX_AUTOMATION,APEX_COLLECTION,APEX_CREDENTIAL,APEX_CSS,'
+        || 'APEX_CUSTOM_AUTH,APEX_ESCAPE,APEX_EXPORT,APEX_IR,APEX_ITEM,'
         || 'APEX_JAVASCRIPT,APEX_LANG,APEX_LDAP,APEX_MAIL,APEX_PAGE,APEX_PKG_APP_INSTALL,'
-        || 'APEX_REGION,APEX_SESSION,APEX_SPATIAL,APEX_STRING,APEX_THEME,'
+        || 'APEX_PLUGIN,APEX_REGION,APEX_SESSION,APEX_SPATIAL,APEX_STRING,APEX_THEME,'
         || 'APEX_UI_DEFAULT_UPDATE,APEX_UTIL,APEX_WEB_SERVICE,APEX_ZIP';
     begin   
         for cur in (
@@ -336,6 +350,20 @@ IS
     IS 
     begin   
         for cur in (
+			with return_q as (
+				-- function return values of type record or table
+                select A.PACKAGE_NAME, A.OWNER, 
+					UPPER(T.TYPE_NAME) TYPE_NAME, UPPER(T.ITEM_NAME) ITEM_NAME, UPPER(T.ITEM_TYPE) ITEM_TYPE, T.Nested_Table
+				from (        
+                    select distinct ARG.PACKAGE_NAME, ARG.OWNER, ARG.TYPE_SUBNAME
+                    from SYS.ALL_ARGUMENTS ARG
+                    where ARG.TYPE_NAME = ARG.PACKAGE_NAME 
+                    and ARG.TYPE_OWNER = ARG.OWNER
+                    and ARG.ARGUMENT_NAME IS NULL -- return value
+                    and ARG.TYPE_SUBNAME IS NOT NULL
+                ) A, table(package_tracer.Pipe_Record_types(p_Package_Name=>A.PACKAGE_NAME, p_Package_Owner=>A.OWNER)) T
+                where A.TYPE_SUBNAME = UPPER(T.TYPE_NAME)
+			)
             select
                 SYN.OWNER           Synonym_Owner, 
                 SYN.SYNONYM_NAME    Synonym_Name,
@@ -350,9 +378,20 @@ IS
                 select 1
                 from SYS.All_Arguments ARG
                 where ARG.TYPE_NAME = ARG.PACKAGE_NAME
+                and ARG.TYPE_OWNER = ARG.OWNER
                 and ARG.PACKAGE_NAME = SYN.TABLE_NAME
                 and ARG.OWNER = SYN.TABLE_OWNER
-                and (ARG.ARGUMENT_NAME IS NOT NULL or ARG.DATA_TYPE != 'PL/SQL TABLE') -- skip return type
+				and ARG.ARGUMENT_NAME IS NOT NULL -- unsuported argument type
+            )
+            and NOT EXISTS ( -- package defines no nested record types for function return values 
+				select 1
+				from return_q A
+				left outer join SYS.All_Types S 
+					on S.TYPE_NAME = A.ITEM_TYPE and S.OWNER = A.OWNER
+				where A.ITEM_NAME IS NOT NULL -- is no table type 
+				and A.PACKAGE_NAME = SYN.TABLE_NAME
+				and A.OWNER = SYN.TABLE_OWNER
+				and (A.Nested_Table = 'Y' or S.TYPE_NAME IS NOT NULL)
             )
             and exists ( -- package has procedures
                 select 1 
@@ -375,9 +414,10 @@ IS
             	'APEX_DEBUG', -- because package_tracer is dependent on this synonyms
                 'DBMS_DIMENSION', -- PLS-00307: Zu viele Deklarationen von 'VALIDATE_DIMENSION' entsprechen diesem Aufruf
                 'DBMS_SODA_USER_ADMIN', -- PLS-00201
+                'APEX_APPLICATION',	-- because the global variables will not be set
+                'APEX_PLUGIN', 		-- package defines new record types for function arguments
                 'APEX_INSTANCE_ADMIN',
-                'APEX_INSTANCE_REST_ADMIN',
-                'API_TRACE'
+                'APEX_INSTANCE_REST_ADMIN'
             )
             order by SYN.SYNONYM_NAME
         ) loop 
@@ -610,15 +650,18 @@ IS
                     'VIEW' DEST_OBJECT_TYPE,
                     FOREIGN_DEPS_CNT
                 FROM (
-                    SELECT 'SELECT'
-                        || CASE WHEN TR.PRIVS IS NOT NULL THEN ', ' || TR.PRIVS
-                        ELSE 
-                            CASE WHEN UPDATABLE > 0  AND NVL(D.FOREIGN_DEPS_CNT,0) = 0 THEN ', UPDATE' END
-                            || CASE WHEN INSERTABLE > 0 AND NVL(D.FOREIGN_DEPS_CNT,0) = 0 THEN ', INSERT' END
-                            || CASE WHEN DELETABLE > 0  AND NVL(D.FOREIGN_DEPS_CNT,0) = 0 THEN ', DELETE ' END 
+                    SELECT CASE WHEN D.FOREIGN_DEPS_CNT > 0 THEN NVL(D.PRIVILEGE, 'READ')
+                    	ELSE 
+                    		'SELECT' ||
+							CASE WHEN TR.PRIVS IS NOT NULL THEN ', ' || TR.PRIVS
+								ELSE
+									CASE WHEN UPDATABLE > 0     THEN ', UPDATE' END
+									|| CASE WHEN INSERTABLE > 0 THEN ', INSERT' END
+									|| CASE WHEN DELETABLE > 0  THEN ', DELETE' END 
+							END
                         END PRIVS,
                         T.TABLE_NAME, T.OWNER, 
-                        NVL(D.FOREIGN_DEPS_CNT,0) FOREIGN_DEPS_CNT,
+                        NVL(D.NOT_GRANTABLE,0) FOREIGN_DEPS_CNT,
                         P.PKEY_CONS, C.TAB_COLUMNS
                     FROM (
                         SELECT T.TABLE_NAME, T.OWNER,
@@ -632,12 +675,21 @@ IS
                         )
                         GROUP BY TABLE_NAME, OWNER
                     ) T LEFT OUTER JOIN (
-                    -- when a view is accessing other foreign view, then is view has SELECT-only access
-                        SELECT D.NAME, COUNT(*) FOREIGN_DEPS_CNT
-                        FROM SYS.USER_DEPENDENCIES D
-                        WHERE D.TYPE = 'VIEW'
-                        AND D.REFERENCED_TYPE IN ('VIEW', 'TABLE', 'SYNONYM')
-                        AND D.REFERENCED_OWNER != SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
+                    -- when a view is accessing other foreign view, then is view has READ-only access
+                        SELECT NAME, COUNT(*) FOREIGN_DEPS_CNT,
+                        	LISTAGG(CASE WHEN GRANTABLE = 'YES' THEN PRIVILEGE END, ', ') WITHIN GROUP (ORDER BY PRIVILEGE) PRIVILEGE,
+                        	COUNT(CASE WHEN GRANTABLE = 'NO' THEN 1 END) NOT_GRANTABLE
+                        FROM (
+                            SELECT DISTINCT D.NAME, PRI.PRIVILEGE, NVL(PRI.GRANTABLE, 'NO') GRANTABLE
+                            FROM SYS.USER_DEPENDENCIES D
+                            LEFT OUTER JOIN SYS.ALL_TAB_PRIVS PRI 
+                                ON PRI.table_Schema = D.REFERENCED_OWNER 
+                                AND PRI.table_Name = D.REFERENCED_NAME
+                                AND PRI.grantee IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
+                            WHERE D.TYPE = 'VIEW'
+                            AND D.REFERENCED_TYPE IN ('VIEW', 'TABLE', 'SYNONYM')
+                            AND D.REFERENCED_OWNER NOT IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
+                        )
                         GROUP BY NAME
                     ) D ON T.TABLE_NAME = D.NAME
                     LEFT OUTER JOIN (
@@ -1306,6 +1358,80 @@ IS
         return v_Comment;
     END Get_Package_Synonym_Text;
 
+	-- list record and table types of a package
+    FUNCTION Pipe_Record_types (
+        p_Package_Name IN VARCHAR2,
+        p_Package_Owner IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
+    ) RETURN tab_record_fields PIPELINED
+    IS 
+        v_Clob CLOB;
+        v_Record_Pattern CONSTANT VARCHAR2(100) := 'TYPE\s+(\w+)\s+IS\s+RECORD\s*\((.+?)\);';
+        v_Record_Type VARCHAR2(1000);
+        v_Record_Text VARCHAR2(32767);
+        TYPE t_Record_Type IS TABLE OF VARCHAR2(1024);
+        v_Types_List t_Record_Type :=  t_Record_Type(NULL);
+        v_Item_Pattern CONSTANT VARCHAR2(100) := '^\s*(\w+)\s+(.+?),*\s*$';
+		v_Item_Name VARCHAR2(1000);
+		v_Item_Type VARCHAR2(1000);
+        v_Table_Pattern CONSTANT VARCHAR2(100) := 'TYPE\s+(\w+)\s+IS\s+TABLE\s+OF\s*(\w+).*;';
+		v_out_row rec_record_fields;
+    BEGIN 
+        v_Clob := Get_Package_Source(
+            p_Package_Name => p_Package_Name,
+            p_Package_Owner => p_Package_Owner
+        );
+        -- remove comments
+        v_Clob := REGEXP_REPLACE(v_Clob, '\s*--.*$', '', 1, 0, 'm');
+        v_Clob := REGEXP_REPLACE(v_Clob, '/\*.+?\*/', '', 1, 0, 'n');
+        -- remove empty lines
+        v_Clob := REGEXP_REPLACE(v_Clob, chr(10)||'{2,}', chr(10), 1, 0, 'm');
+		for ind in 1..100 loop
+			v_Record_Type := REGEXP_SUBSTR(v_Clob, v_Table_Pattern, 1, ind, 'in', 1);
+			exit when v_Record_Type IS NULL;
+			v_Types_List.EXTEND;
+			v_Types_List(v_Types_List.LAST) := v_Record_Type;
+		end loop;
+		for ind in 1..100 loop
+			v_Record_Type := REGEXP_SUBSTR(v_Clob, v_Record_Pattern, 1, ind, 'in', 1);
+			exit when v_Record_Type IS NULL;
+			v_Types_List.EXTEND;
+			v_Types_List(v_Types_List.LAST) := v_Record_Type;
+			v_Record_Text := REGEXP_SUBSTR(v_Clob, v_Record_Pattern, 1, ind, 'in', 2);
+			for ind2 in 1..100 loop
+				v_Item_Name := REGEXP_SUBSTR(v_Record_Text, v_Item_Pattern, 1, ind2, 'im', 1);
+				exit when v_Item_Name IS NULL;
+				v_Item_Type := REGEXP_SUBSTR(v_Record_Text, v_Item_Pattern, 1, ind2, 'im', 2);
+				v_out_row.Type_name	:= v_Record_Type;
+				v_out_row.Item_Name	:= v_Item_Name;
+				v_out_row.Item_Type	:= v_Item_Type;
+				v_out_row.Nested_Table := case when v_Item_Type MEMBER OF v_Types_List then 'Y' else 'N' end;
+				PIPE ROW(v_out_row);
+			end loop;
+		end loop;
+    END Pipe_Record_types;
+
+    FUNCTION Get_Record_Fields (
+        p_Package_Head IN CLOB,
+        p_Type_Subname IN VARCHAR2,
+        p_Variable_Name IN VARCHAR2 DEFAULT 'lv_temp'
+    ) RETURN VARCHAR2 
+    IS 
+        v_Record_Text VARCHAR2(32767);
+        v_pattern CONSTANT VARCHAR2(100) := 'TYPE\s+'||p_Type_Subname||'\s+IS\s+RECORD\s*\((.+?)\);';
+		v_Item VARCHAR2(32767);
+		v_Result VARCHAR2(32767);
+    BEGIN 
+        v_Record_Text := REGEXP_SUBSTR(p_Package_Head, v_pattern, 1, 1, 'in', 1);
+		for ind in 1..200 loop
+			v_Item := REGEXP_SUBSTR(v_Record_Text, '^\s*(\w+)', 1, ind, 'im', 1);
+			exit when v_Item IS NULL;
+			v_Result := v_Result 
+			|| case when ind > 1 then ',' end
+			|| p_Variable_Name || '.' || v_Item;
+		end loop;
+        return v_Result;
+    END Get_Record_Fields;
+
     FUNCTION Get_Package_Body (
         p_Object_Name IN VARCHAR2,
         p_Object_Owner IN VARCHAR2,
@@ -1329,10 +1455,11 @@ IS
                         A.IN_OUT, 
                         A.PLS_TYPE RETURN_PLS_TYPE, 
                         A.DATA_TYPE RETURN_DATA_TYPE,
+                        A.TYPE_SUBNAME RETURN_TYPE_NAME,
                         A.CHAR_USED,
                         CASE when A.TYPE_NAME IS NOT NULL THEN 
                             CASE WHEN A.DATA_TYPE = 'REF' THEN ' ref ' END
-                            || CASE WHEN S.SYNONYM_NAME IS NULL THEN TYPE_OWNER||'.' END 
+                            || CASE WHEN S.SYNONYM_NAME IS NULL AND TYPE_OWNER != p_Dest_Schema THEN TYPE_OWNER||'.' END 
                             || A.TYPE_NAME 
                             || CASE WHEN A.TYPE_SUBNAME IS NOT NULL THEN '.'||A.TYPE_SUBNAME END 
                         ELSE 
@@ -1362,7 +1489,7 @@ IS
             SELECT PRO.PROCEDURE_NAME, 
                 PRO.SUBPROGRAM_ID, PRO.OVERLOAD,
                 PRO.AGGREGATE, PRO.PIPELINED, PRO.IMPLTYPEOWNER, PRO.IMPLTYPENAME,
-                RET.RETURN_TYPE, RET.TYPE_OBJECT_TYPE, 
+                RET.RETURN_TYPE, RET.TYPE_OBJECT_TYPE, RET.RETURN_TYPE_NAME,
                 RET.RETURN_PLS_TYPE, RET.RETURN_DATA_TYPE, RET.CHAR_USED,
                 RD.RETURN_TYPE DEST_RETURN_TYPE,
                 NVL(ARG.ARGS_COUNT,0) ARGS_COUNT,
@@ -1560,8 +1687,32 @@ IS
                         || case when v_proc_tbl(ind).ARGS_COUNT > 0 then '(' || v_proc_tbl(ind).CALL_PARAMETER || ')' end 
                         || ';' || chr(10) 
                         || '    select *' || chr(10) 
-                        || '    bulk collect into '||p_Variable_Name||'' || chr(10) 
+                        || '    bulk collect into '||p_Variable_Name|| chr(10) 
                         || '    from table (lv_temp);' || chr(10) 
+                        || v_trace_output
+                        || '    return '||p_Variable_Name||';' || chr(10);                    
+                    elsif v_proc_tbl(ind).PROC_TYPE = 'FUNCTION'
+                    and v_proc_tbl(ind).PIPELINED = 'NO'
+                    and v_proc_tbl(ind).TYPE_OBJECT_TYPE = 'PACKAGE'
+                    and v_proc_tbl(ind).RETURN_TYPE != v_proc_tbl(ind).DEST_RETURN_TYPE
+                    and v_proc_tbl(ind).RETURN_DATA_TYPE = 'PL/SQL RECORD'
+                    then
+                        v_sqltext := v_sqltext || chr(10) 
+                        || 'is' || chr(10) 
+                        || '    lv_temp ' || v_proc_tbl(ind).RETURN_TYPE || ';' || chr(10) 
+                        || '    '||p_Variable_Name||' ' || v_proc_tbl(ind).DEST_RETURN_TYPE || ';' || chr(10) 
+                        || 'begin' || chr(10) 
+                        || v_trace_call
+                        || '    lv_temp := ' || v_calling_subprog
+                        || case when v_proc_tbl(ind).ARGS_COUNT > 0 then '(' || v_proc_tbl(ind).CALL_PARAMETER || ')' end 
+                        || ';' || chr(10) 
+                        || '    '||p_Variable_Name||' := ' || v_proc_tbl(ind).DEST_RETURN_TYPE 
+                        || '(' 
+                        || Get_Record_Fields(
+                        	p_Package_Head=>v_Header, 
+                        	p_Type_Subname=>v_proc_tbl(ind).RETURN_TYPE_NAME, 
+                        	p_Variable_Name=>'lv_temp') 
+                        || ');'|| chr(10) 
                         || v_trace_output
                         || '    return '||p_Variable_Name||';' || chr(10);                    
                     elsif v_proc_tbl(ind).PROC_TYPE = 'FUNCTION'
@@ -1683,7 +1834,7 @@ IS
         where ARG.Type_Name = ARG.Package_Name
         and ARG.Package_Name = v_Package_Name_Out 
         and ARG.owner = v_Package_Owner_Out
-        and (ARG.argument_name IS NOT NULL or ARG.DATA_TYPE != 'PL/SQL TABLE') -- skip return type
+        and ARG.argument_name IS NOT NULL -- unsuported argument type
         ;
         if v_Count > 0 then 
             RAISE_APPLICATION_ERROR(-20003, 'The package ' || v_Synonym_Name || ' is defining table or record types for function arguments and can´t be traced.');
