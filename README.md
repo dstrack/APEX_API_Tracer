@@ -6,7 +6,7 @@ This program can generate a package for tracing automatically when the following
 
   1. the package is accessible to the schema user via a synonym.
   2. the procedure or function is listed in the package header.
-  3. the package defines no record or table types.
+  3. the package defines no pl/sql table types.
   4. the package header is not wrapped.
 
 The enable - procedure will generate a tracing-package with the same name as the synonym in your local schema.
