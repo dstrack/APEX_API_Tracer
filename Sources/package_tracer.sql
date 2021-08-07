@@ -360,7 +360,7 @@ IS
         for cur in (
 			with ARGUMENTS_Q as (
 				-- function arguments and return values of type record or table
-                select /*+ RESULT_CACHE */ 
+                select 
                 	A.PACKAGE_NAME, A.OWNER, 
 					T.TYPE_NAME, T.ITEM_NAME, T.ITEM_TYPE, T.Nested_Table, T.Table_Type
 				from (        
@@ -392,7 +392,7 @@ IS
             )
 */          and NOT EXISTS (
             	select * from SYS.ALL_ARGUMENTS A
-				where A.data_type IN ('UNDEFINED', 'OPAQUE/XMLTYPE')
+				where A.data_type IN ('UNDEFINED')
 				and A.PACKAGE_NAME = SYN.TABLE_NAME
 				and A.OWNER = SYN.TABLE_OWNER
             )
@@ -419,7 +419,10 @@ IS
                 'DBMS_DIMENSION', -- PLS-00307: Zu viele Deklarationen von 'VALIDATE_DIMENSION' entsprechen diesem Aufruf
                 'DBMS_SODA_USER_ADMIN', -- PLS-00201
                 'APEX_APPLICATION',	-- because the global variables will not be set
+                'APEX_DATA_PARSER',
+                'APEX_EXEC',
                 'APEX_PLUGIN', 		-- package defines new record types for function arguments
+                'APEX_PLUGIN_UTIL',
                 'APEX_INSTANCE_ADMIN',
                 'APEX_INSTANCE_REST_ADMIN'
             )
@@ -477,6 +480,7 @@ IS
                         FROM SYS.ALL_DEPENDENCIES DB 
                         WHERE DB.OWNER = p_Dest_Schema
                         AND DB.NAME = DB.REFERENCED_NAME
+                        AND DB.TYPE IN ('SYNONYM', 'VIEW')
                     ) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER
                     LEFT OUTER JOIN SYS.ALL_OBJECTS OBJ ON OBJ.OWNER = DA.OWNER and OBJ.OBJECT_NAME = DA.REFERENCED_NAME
                     WHERE (SYN.OWNER IS NULL or Pri.Privilege IS NULL)
@@ -534,7 +538,7 @@ IS
                      AND ERR.TYPE LIKE 'PACKAGE%'
                     ) ERROR_COUNT
                 FROM DEPS D
-                UNION ALL -- enabled local synonym packages
+                UNION -- enabled local synonym packages
                 SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME, 'Y' IS_ENABLED,
                     NULL GRANT_STATS, 
                     NULL REVOKE_STATS, 

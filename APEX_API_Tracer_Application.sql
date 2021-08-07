@@ -27,7 +27,7 @@ prompt APPLICATION 103 - APEX API Tracer
 -- Application Export:
 --   Application:     103
 --   Name:            APEX API Tracer
---   Date and Time:   17:59 Saturday August 7, 2021
+--   Date and Time:   19:28 Saturday August 7, 2021
 --   Exported By:     DIRK
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -118,7 +118,7 @@ wwv_flow_api.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'APEX API Tracer'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210807175916'
+,p_last_upd_yyyymmddhh24miss=>'20210807192829'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>9
 ,p_ui_type_name => null
@@ -12936,7 +12936,7 @@ wwv_flow_api.create_install_script(
 '        for cur in (',
 '			with ARGUMENTS_Q as (',
 '				-- function arguments and return values of type record or table',
-'                select /*+ RESULT_CACHE */ ',
+'                select ',
 '                	A.PACKAGE_NAME, A.OWNER, ',
 '					T.TYPE_NAME, T.ITEM_NAME, T.ITEM_TYPE, T.Nested_Table, T.Table_Type',
 '				from (        ',
@@ -12968,7 +12968,7 @@ wwv_flow_api.create_install_script(
 '            )',
 '*/          and NOT EXISTS (',
 '            	select * from SYS.ALL_ARGUMENTS A',
-'				where A.data_type IN (''UNDEFINED'', ''OPAQUE/XMLTYPE'')',
+'				where A.data_type IN (''UNDEFINED'')',
 '				and A.PACKAGE_NAME = SYN.TABLE_NAME',
 '				and A.OWNER = SYN.TABLE_OWNER',
 '            )',
@@ -12995,7 +12995,10 @@ wwv_flow_api.create_install_script(
 '                ''DBMS_DIMENSION'', -- PLS-00307: Zu viele Deklarationen von ''VALIDATE_DIMENSION'' entsprechen diesem Aufruf',
 '                ''DBMS_SODA_USER_ADMIN'', -- PLS-00201',
 '                ''APEX_APPLICATION'',	-- because the global variables will not be set',
+'                ''APEX_DATA_PARSER'',',
+'                ''APEX_EXEC'',',
 '                ''APEX_PLUGIN'', 		-- package defines new record types for function arguments',
+'                ''APEX_PLUGIN_UTIL'',',
 '                ''APEX_INSTANCE_ADMIN'',',
 '                ''APEX_INSTANCE_REST_ADMIN''',
 '            )',
@@ -13053,6 +13056,7 @@ wwv_flow_api.create_install_script(
 '                        FROM SYS.ALL_DEPENDENCIES DB ',
 '                        WHERE DB.OWNER = p_Dest_Schema',
 '                        AND DB.NAME = DB.REFERENCED_NAME',
+'                        AND DB.TYPE IN (''SYNONYM'', ''VIEW'')',
 '                    ) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER',
 '                    LEFT OUTER JOIN SYS.ALL_OBJECTS OBJ ON OBJ.OWNER = DA.OWNER and OBJ.OBJECT_NAME = DA.REFERENCED_NAME',
 '                    WHERE (SYN.OWNER IS NULL or Pri.Privilege IS NULL)',
@@ -13110,7 +13114,7 @@ wwv_flow_api.create_install_script(
 '                     AND ERR.TYPE LIKE ''PACKAGE%''',
 '                    ) ERROR_COUNT',
 '                FROM DEPS D',
-'                UNION ALL -- enabled local synonym packages',
+'                UNION -- enabled local synonym packages',
 '                SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME, ''Y'' IS_ENABLED,',
 '                    NULL GRANT_STATS, ',
 '                    NULL REVOKE_STATS, ',
@@ -13217,7 +13221,7 @@ wwv_flow_api.create_install_script(
 '				group by DA.REFERENCED_NAME, DA.REFERENCED_OWNER',
 '            )',
 '            SELECT SYNONYM_NAME, PACKAGE_OWNER, PACKAGE_NAME,',
-'                APEX_ITEM.HIDDEN (p_idx => 1, p_value => SYNONYM_NAME, p_item_id => ''f01_''||ROWNUM, p_item_label => ''ROW_SELECTOR$'') |'))
+'                '))
 );
 end;
 /
@@ -13225,7 +13229,7 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(261939746109436819)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'|',
+'APEX_ITEM.HIDDEN (p_idx => 1, p_value => SYNONYM_NAME, p_item_id => ''f01_''||ROWNUM, p_item_label => ''ROW_SELECTOR$'') ||',
 '                APEX_ITEM.SWITCH (p_idx => 2, ',
 '                  p_value => IS_ENABLED, ',
 '                  p_item_id => ''f02_''||ROWNUM, p_item_label => ''SWITCH_ENABLED'') ',
@@ -13809,9 +13813,7 @@ wwv_flow_api.append_to_install_script(
 '                    p_Logging_Finish_Call, ''%s'',',
 '                    case when OUT_COUNT > 0 then ',
 '                        api_trace.Format_Call_Parameter(',
-'                            p_calling_subprog => CALLING_SUBPROG,',
-'                            p_synonym_name => INITCAP(OBJECT_NAME) || '' output '',',
-'                  '))
+'                            p_calling_subprog =>'))
 );
 null;
 end;
@@ -13820,7 +13822,9 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(261939746109436819)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'          p_bind_char => null,',
+' CALLING_SUBPROG,',
+'                            p_synonym_name => INITCAP(OBJECT_NAME) || '' output '',',
+'                            p_bind_char => null,',
 '                            p_overload => OVERLOAD,',
 '                            p_in_out => ''OUT''',
 '                        )',
@@ -14441,9 +14445,7 @@ wwv_flow_api.append_to_install_script(
 '                                p_Subprogram_ID => v_proc_tbl(ind).SUBPROGRAM_ID,',
 '                                p_calling_subprog => v_calling_subprog,',
 '                                p_synonym_name => v_procedure_name || '' output '',',
-'                                p_value_max_length => p_value_max_length,',
-'                                p_bind_char => null,',
-'    '))
+'             '))
 );
 null;
 end;
@@ -14452,7 +14454,9 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(261939746109436819)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'                            p_overload => v_proc_tbl(ind).OVERLOAD,',
+'                   p_value_max_length => p_value_max_length,',
+'                                p_bind_char => null,',
+'                                p_overload => v_proc_tbl(ind).OVERLOAD,',
 '                                p_in_out => ''OUT''',
 '                            )',
 '                        end',
