@@ -415,17 +415,26 @@ IS
             )
             and SYN.SYNONYM_NAME NOT IN (
             	'API_TRACE',
-            	'APEX_DEBUG', -- because package_tracer is dependent on this synonyms
-                'DBMS_DIMENSION', -- PLS-00307: Zu viele Deklarationen von 'VALIDATE_DIMENSION' entsprechen diesem Aufruf
-                'DBMS_SODA_USER_ADMIN', -- PLS-00201
-                'APEX_APPLICATION',	-- because the global variables will not be set
-                'APEX_DATA_PARSER',
+            	'APEX_DEBUG', 			-- because package_tracer is dependent on this synonyms
+                'APEX_APPLICATION',		-- because the global variables will not be set
+                'APEX_DATA_PARSER', 	-- package defines new record types for function arguments
                 'APEX_EXEC',
-                'APEX_PLUGIN', 		-- package defines new record types for function arguments
+                'APEX_JSON',
+                'APEX_PLUGIN', 		
                 'APEX_PLUGIN_UTIL',
                 'APEX_INSTANCE_ADMIN',
-                'APEX_INSTANCE_REST_ADMIN'
-            )
+                'APEX_INSTANCE_REST_ADMIN',
+                'APEX_WORKSPACE_USER',
+                'DBMS_DIMENSION', 			-- PLS-00307: Zu viele Deklarationen von 'VALIDATE_DIMENSION' entsprechen diesem Aufruf
+                'DBMS_SODA_USER_ADMIN', 	-- PLS-00201
+                'DBMS_LOB',					-- PLS-00452: Unterprogramm 'DBFS_LINK_GENERATE_PATH' verstößt gegen sein zugeordnetes Pragma
+                'DBMS_DEBUG',				-- package defines nested record types for function arguments
+                'DBMS_STAT_FUNCS',
+                'DBMS_STATS',
+                'DBMS_TF',
+                'OWA_COOKIE',
+                'OWA_TEXT'
+             )
             order by SYN.SYNONYM_NAME
         ) loop 
             pipe row (cur);
@@ -1172,7 +1181,7 @@ IS
                 || rpad(' ', p_Indent+4)
                 || 'EXECUTE IMMEDIATE api_trace.Dyn_Log_Start'
                 || case when OVERLOAD is not null then '(p_overload => ' || OVERLOAD || ')' end
-                || case when PARAM_LIST_IN IS NOT NULL then -- ??
+                || case when PARAM_LIST_IN IS NOT NULL then 
                     chr(10) 
                     || rpad(' ', p_Indent+4)
                     || 'USING '
@@ -1472,10 +1481,20 @@ IS
             Log_Elapsed_Time(v_Timemark, '-- Pipe_Record_types Get_Package_Source ');       
         end if;
 		v_Offset := 1;
+		for cur in (
+			select lower(Da.referenced_Name) Type_Name
+			from SYS.ALL_DEPENDENCIES DA 
+			where DA.owner = p_Package_Owner
+			and DA.name = p_Package_Name
+			and DA.type = 'PACKAGE'
+			and DA.referenced_Type = 'TYPE'
+		) loop 
+			v_Types_List(cur.Type_Name) := 'Y';
+		end loop;
 		for ind in 1..100 loop
 			v_Record_Type := REGEXP_SUBSTR(v_Clob, v_Types_Pattern, v_Offset, 1, 'in', 1);
 			exit when v_Record_Type IS NULL;
-			v_Types_List(v_Record_Type) := 'N';
+			v_Types_List(lower(v_Record_Type)) := 'N';
 			v_Offset := REGEXP_INSTR(v_Clob, v_Types_Pattern, v_Offset, 1, 1, 'in');
 		end loop;
         if g_debug then
@@ -1496,9 +1515,9 @@ IS
 				v_out_row.Item_Name	:= v_Item_Name;
 				v_out_row.Item_Type	:= v_Item_Type;
 				v_out_row.Table_Type := 'RECORD';
-				if v_Types_List.EXISTS(v_Item_Type) then 
+				if v_Types_List.EXISTS(lower(v_Item_Type)) then 
 					v_out_row.Nested_Table := 'Y';
-					v_Types_List(v_Record_Type) := 'Y';
+					v_Types_List(lower(v_Record_Type)) := 'Y';
 				else 
 					v_out_row.Nested_Table := 'N';
 				end if;
@@ -1518,8 +1537,8 @@ IS
 			v_out_row.Item_Name	:= v_Item_Type;
 			v_out_row.Item_Type	:= null;
 			v_out_row.Table_Type := 'TABLE';
-			if v_Types_List.EXISTS(v_Item_Type) then 
-				v_out_row.Nested_Table := v_Types_List(v_Item_Type);
+			if v_Types_List.EXISTS(lower(v_Item_Type)) then 
+				v_out_row.Nested_Table := v_Types_List(lower(v_Item_Type));
 			else 
 				v_out_row.Nested_Table := 'N';
 			end if;
@@ -1537,8 +1556,8 @@ IS
 			v_out_row.Item_Name	:= v_Item_Type;
 			v_out_row.Item_Type	:= v_Index_by;
 			v_out_row.Table_Type := 'PL/SQL TABLE';
-			if v_Types_List.EXISTS(v_Item_Type) then 
-				v_out_row.Nested_Table := v_Types_List(v_Item_Type);
+			if v_Types_List.EXISTS(lower(v_Item_Type)) then 
+				v_out_row.Nested_Table := v_Types_List(lower(v_Item_Type));
 			else 
 				v_out_row.Nested_Table := 'N';
 			end if;
@@ -1592,7 +1611,16 @@ IS
         CURSOR all_proc_cur
         IS
             WITH TYPES_Q AS (
-            	SELECT *
+            	SELECT TYPE_NAME, ITEM_NAME,
+					case when NESTED_TABLE = 'Y' 
+							or (INSTR(UPPER(ITEM_NAME),'%TYPE') = 0 
+							and package_tracer.Is_Printable_Type(UPPER(REGEXP_REPLACE (ITEM_NAME, '\(.+?\)'))) = 'NO'
+							and package_tracer.Get_Record_Fields(
+											p_Package_Head=>v_Header, 
+											p_Type_Subname=>ITEM_NAME) IS NOT NULL)
+						then ITEM_NAME
+					end RECORD_TYPE, 
+            		ITEM_TYPE, NESTED_TABLE, TABLE_TYPE
             	FROM package_tracer.Pipe_Record_types(p_Package_Name=>p_Object_Name, p_Package_Owner=>p_Object_Owner)
             	WHERE TABLE_TYPE != 'RECORD'
             ), RETURN_Q AS (
@@ -1602,9 +1630,7 @@ IS
                         A.DATA_TYPE RETURN_DATA_TYPE,
                         A.TYPE_SUBNAME RETURN_TYPE_NAME,
                         NVL(T.ITEM_TYPE, 'PLS_INTEGER') RETURN_IDX_TYPE,
-                        case when T.Nested_Table = 'Y' 
-                        	then T.ITEM_NAME
-                        end RETURN_RECORD_TYPE,
+                        T.RECORD_TYPE RETURN_RECORD_TYPE,
                         A.CHAR_USED,
                         CASE when A.TYPE_NAME IS NOT NULL THEN 
                             CASE WHEN A.DATA_TYPE = 'REF' THEN ' ref ' END
@@ -1629,11 +1655,11 @@ IS
                 SELECT PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID,
                         COUNT(*) ARGS_COUNT,
                         SUM(CASE WHEN IN_OUT IN ('IN/OUT', 'OUT') THEN 1 ELSE 0 END) OUT_COUNT,
-                        LISTAGG(ARG_PREFIX||LOWER(ARGUMENT_NAME), ',') WITHIN GROUP (ORDER BY POSITION) ARGUMENT_NAMES,
-                        LISTAGG(LOWER(ARGUMENT_NAME||'=>'||ARG_PREFIX||ARGUMENT_NAME), ',') WITHIN GROUP (ORDER BY POSITION) CALL_PARAMETER,
+                        LISTAGG(ARG_PREFIX||ARGUMENT_NAME, ',') WITHIN GROUP (ORDER BY POSITION) ARGUMENT_NAMES,
+                        LISTAGG(ARGUMENT_NAME||'=>'||ARG_PREFIX||ARGUMENT_NAME, ',') WITHIN GROUP (ORDER BY POSITION) CALL_PARAMETER,
                         LISTAGG(case when ARG_PREFIX IS NOT NULL
                         		then ARG_PREFIX
-                        			|| LOWER(ARGUMENT_NAME) 
+                        			|| ARGUMENT_NAME 
                         			|| ' ' || ARGUMENT_TYPE 
                         			|| ' := '
 									|| ARGUMENT_TYPE || '('
@@ -1641,94 +1667,111 @@ IS
 										package_tracer.Get_Record_Fields(
 											p_Package_Head=>v_Header, 
 											p_Type_Subname=>TYPE_SUBNAME, 
-											p_Variable_Name=>LOWER(ARGUMENT_NAME)) 
+											p_Variable_Name=>ARGUMENT_NAME) 
 									end
 									|| ')'
                         		end
-                        		|| case when DATA_TYPE = 'PL/SQL TABLE' and T.ITEM_TYPE IS NOT NULL  AND T.Nested_Table = 'Y'
+                        		|| case when DATA_TYPE = 'PL/SQL TABLE' and ITEM_TYPE IS NOT NULL and RECORD_TYPE IS NOT NULL
                         			then ';'||chr(10)||chr(9)
-                        				||'idx' || A.POSITION || ' ' || T.Item_Type
+                        				||'idx' || A.POSITION || ' ' || ITEM_TYPE
                         		end, ';'||chr(10)||chr(9)) WITHIN GROUP (ORDER BY POSITION) ARG_DECLARE_IN,
                          LISTAGG(case when ARG_PREFIX IS NOT NULL and IN_OUT IN ('IN/OUT', 'IN') then 
-                         			case when DATA_TYPE = 'TABLE' and T.ITEM_NAME IS NOT NULL AND T.Nested_Table = 'Y' then  
-										'FOR idx IN 1 .. ' || LOWER(ARGUMENT_NAME) || '.COUNT LOOP' || chr(10)||RPAD(' ', 8)
-										|| ARG_PREFIX || LOWER(ARGUMENT_NAME) || '(idx) := '
-										|| LOWER(A.OWNER || '.' || A.PACKAGE_NAME || '.' || T.ITEM_NAME) || '('
+                         			case when DATA_TYPE = 'TABLE' and RECORD_TYPE IS NOT NULL and NESTED_TABLE = 'Y' then  
+										'FOR idx IN 1 .. ' || ARGUMENT_NAME || '.COUNT LOOP' || chr(10)||RPAD(' ', 8)
+										|| ARG_PREFIX || ARGUMENT_NAME || '(idx) := '
+										|| LOWER(A.OWNER || '.' || A.PACKAGE_NAME || '.' || RECORD_TYPE) || '('
 										|| package_tracer.Get_Record_Fields(
 											p_Package_Head=>v_Header, 
-											p_Type_Subname=>T.ITEM_NAME, 
-											p_Variable_Name=> LOWER(ARGUMENT_NAME)|| '(idx)') 
+											p_Type_Subname=>RECORD_TYPE, 
+											p_Variable_Name=> ARGUMENT_NAME|| '(idx)') 
 										|| ');' || chr(10)||RPAD(' ', 4)
 										|| 'END LOOP'
-									when DATA_TYPE = 'PL/SQL TABLE' and T.ITEM_NAME IS NOT NULL AND T.Nested_Table = 'Y' then 
-										'idx' || A.POSITION || ' := ' || LOWER(ARGUMENT_NAME) || '.FIRST;' || chr(10)||RPAD(' ', 4)
+									when DATA_TYPE = 'PL/SQL TABLE' and ITEM_TYPE IS NOT NULL and RECORD_TYPE IS NOT NULL
+									then 
+										'idx' || A.POSITION || ' := ' || ARGUMENT_NAME || '.FIRST;' || chr(10)||RPAD(' ', 4)
 										|| 'WHILE idx' || A.POSITION || ' IS NOT NULL LOOP' || chr(10)||RPAD(' ', 8)
-										|| ARG_PREFIX || LOWER(ARGUMENT_NAME) || '(idx' || A.POSITION || ') := '
-										|| LOWER(A.OWNER || '.' || A.PACKAGE_NAME || '.' || T.ITEM_NAME) || '('
-										|| package_tracer.Get_Record_Fields(
-											p_Package_Head=>v_Header, 
-											p_Type_Subname=>T.ITEM_NAME, 
-											p_Variable_Name=> LOWER(ARGUMENT_NAME)|| '(idx' || A.POSITION || ')') 
-										|| ');' || chr(10)||RPAD(' ', 8)
-										|| 'idx' || A.POSITION || ' := ' || LOWER(ARGUMENT_NAME) 
+										|| ARG_PREFIX || ARGUMENT_NAME || '(idx' || A.POSITION || ') := '
+										|| case when RECORD_TYPE IS NOT NULL then 
+												LOWER(A.OWNER || '.' || A.PACKAGE_NAME || '.' || RECORD_TYPE) || '('
+												|| package_tracer.Get_Record_Fields(
+													p_Package_Head=>v_Header, 
+													p_Type_Subname=>RECORD_TYPE, 
+													p_Variable_Name=> ARGUMENT_NAME|| '(idx' || A.POSITION || ')') 
+												|| ');' 
+											else 
+												ARGUMENT_NAME|| '(idx' || A.POSITION || ');'
+										end
+										|| chr(10)||RPAD(' ', 8)
+										|| 'idx' || A.POSITION || ' := ' || ARGUMENT_NAME 
 										|| '.NEXT(idx' || A.POSITION || ');' || chr(10)||RPAD(' ', 4)
 										|| 'END LOOP'
 									when DATA_TYPE IN ('TABLE', 'VARRAY', 'PL/SQL TABLE', 'OBJECT') then
-										'select * bulk collect into ' || ARG_PREFIX || LOWER(ARGUMENT_NAME)
-										||' from table (' || LOWER(ARGUMENT_NAME) || ')' 
+										'select * bulk collect into ' || ARG_PREFIX || ARGUMENT_NAME
+										||' from table (' || ARGUMENT_NAME || ')' 
 									end
                         		end, ';'||chr(10)||chr(9)) WITHIN GROUP (ORDER BY POSITION) ARG_CONVERT_IN,
                        LISTAGG(case when ARG_PREFIX IS NOT NULL and IN_OUT IN ('IN/OUT', 'OUT')
                         		then 
                         			case when DATA_TYPE = 'PL/SQL RECORD' then 
-										LOWER(ARGUMENT_NAME) || ' := '
+										ARGUMENT_NAME || ' := '
 										|| LOWER(p_Package_Name || '.' || TYPE_SUBNAME) || '('
 										|| package_tracer.Get_Record_Fields(
 											p_Package_Head=>v_Header, 
 											p_Type_Subname=>TYPE_SUBNAME, 
-											p_Variable_Name=>ARG_PREFIX|| LOWER(ARGUMENT_NAME)) 
+											p_Variable_Name=>ARG_PREFIX|| ARGUMENT_NAME) 
 										|| ')'
-									when DATA_TYPE = 'TABLE' and T.ITEM_NAME IS NOT NULL AND T.Nested_Table = 'Y' then
-										'FOR idx IN 1 .. ' || LOWER(ARGUMENT_NAME) || '.COUNT LOOP' || chr(10)||RPAD(' ', 8)
-										|| LOWER(ARGUMENT_NAME) || '(idx) := '
-										|| T.ITEM_NAME || '('
+									when DATA_TYPE = 'TABLE' and RECORD_TYPE IS NOT NULL and NESTED_TABLE = 'Y' then
+										'FOR idx IN 1 .. ' || ARGUMENT_NAME || '.COUNT LOOP' || chr(10)||RPAD(' ', 8)
+										|| ARGUMENT_NAME || '(idx) := '
+										|| RECORD_TYPE || '('
 										|| package_tracer.Get_Record_Fields(
 											p_Package_Head=>v_Header, 
-											p_Type_Subname=>T.ITEM_NAME, 
-											p_Variable_Name=> ARG_PREFIX || LOWER(ARGUMENT_NAME)|| '(idx)') 
+											p_Type_Subname=>RECORD_TYPE, 
+											p_Variable_Name=> ARG_PREFIX || ARGUMENT_NAME|| '(idx)') 
 										|| ');' || chr(10)||RPAD(' ', 4)
 										|| 'END LOOP'
 									
-									when DATA_TYPE = 'PL/SQL TABLE' and T.ITEM_NAME IS NOT NULL AND T.Nested_Table = 'Y' then 
-										'idx' || A.POSITION || ' := ' || ARG_PREFIX || LOWER(ARGUMENT_NAME) || '.FIRST;' || chr(10)||RPAD(' ', 4)
+									when DATA_TYPE = 'PL/SQL TABLE' and ITEM_TYPE IS NOT NULL AND RECORD_TYPE IS NOT NULL then 
+										'idx' || A.POSITION || ' := ' || ARG_PREFIX || ARGUMENT_NAME || '.FIRST;' || chr(10)||RPAD(' ', 4)
 										|| 'WHILE idx' || A.POSITION || ' IS NOT NULL LOOP' || chr(10)||RPAD(' ', 8)
-										|| LOWER(ARGUMENT_NAME) || '(' || 'idx' || A.POSITION || ') := '
-										|| T.ITEM_NAME || '('
-										|| package_tracer.Get_Record_Fields(
-											p_Package_Head=>v_Header, 
-											p_Type_Subname=>T.ITEM_NAME, 
-											p_Variable_Name=> ARG_PREFIX || LOWER(ARGUMENT_NAME)|| '(' || 'idx' || A.POSITION || ')') 
-										|| ');' || chr(10)||RPAD(' ', 8)
-										|| 'idx' || A.POSITION || ' := ' || ARG_PREFIX || LOWER(ARGUMENT_NAME) || '.NEXT(idx' || A.POSITION || ');' || chr(10)||RPAD(' ', 4)
+										|| ARGUMENT_NAME || '(' || 'idx' || A.POSITION || ') := '
+										|| case when RECORD_TYPE IS NOT NULL then 
+												RECORD_TYPE || '('
+												|| package_tracer.Get_Record_Fields(
+													p_Package_Head=>v_Header, 
+													p_Type_Subname=>RECORD_TYPE, 
+													p_Variable_Name=> ARG_PREFIX || ARGUMENT_NAME|| '(' || 'idx' || A.POSITION || ')') 
+												|| ');' 
+											else 
+												ARG_PREFIX || ARGUMENT_NAME|| '(idx' || A.POSITION || ');'
+										end
+										|| chr(10)||RPAD(' ', 8)
+										|| 'idx' || A.POSITION || ' := ' || ARG_PREFIX || ARGUMENT_NAME || '.NEXT(idx' || A.POSITION || ');' || chr(10)||RPAD(' ', 4)
 										|| 'END LOOP'									
 									when DATA_TYPE IN ('TABLE', 'VARRAY', 'PL/SQL TABLE', 'OBJECT') then
-										'select * bulk collect into ' || LOWER(ARGUMENT_NAME)
-										||' from table (' || ARG_PREFIX || LOWER(ARGUMENT_NAME) || ')' 
+										'select * bulk collect into ' || ARGUMENT_NAME
+										||' from table (' || ARG_PREFIX || ARGUMENT_NAME || ')' 
 									end
                         		end, ';'||chr(10)||chr(9)) WITHIN GROUP (ORDER BY POSITION) ARG_CONVERT_OUT
-                FROM (SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, ARGUMENT_NAME,
-                			DATA_TYPE, POSITION, TYPE_SUBNAME, IN_OUT, 
-                			lower(TYPE_OWNER || '.' || TYPE_NAME || '.' || TYPE_SUBNAME) ARGUMENT_TYPE,
-                			case when TYPE_NAME = PACKAGE_NAME and TYPE_OBJECT_TYPE = 'PACKAGE' 
-                			and DATA_TYPE IN ('PL/SQL TABLE', 'PL/SQL RECORD', 'TABLE', 'VARRAY')
-                				then 'l'
-                			end ARG_PREFIX
-                	FROM SYS.ALL_ARGUMENTS 
-					WHERE DATA_LEVEL = 0 
-					AND POSITION > 0
-					AND ARGUMENT_NAME IS NOT NULL
+				FROM (
+					SELECT PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID, 
+						ARGUMENT_NAME, DATA_TYPE, POSITION, TYPE_SUBNAME, IN_OUT, ARGUMENT_TYPE,
+						ARG_PREFIX, T.RECORD_TYPE, T.ITEM_TYPE, T.NESTED_TABLE
+					FROM (SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, 
+								LOWER(ARGUMENT_NAME) ARGUMENT_NAME,
+								DATA_TYPE, POSITION, TYPE_SUBNAME, IN_OUT, 
+								lower(TYPE_OWNER || '.' || TYPE_NAME || '.' || TYPE_SUBNAME) ARGUMENT_TYPE,
+								case when TYPE_NAME = PACKAGE_NAME and TYPE_OBJECT_TYPE = 'PACKAGE' 
+								and DATA_TYPE IN ('PL/SQL TABLE', 'PL/SQL RECORD', 'TABLE', 'VARRAY')
+									then 'l'
+								end ARG_PREFIX
+						FROM SYS.ALL_ARGUMENTS 
+						WHERE DATA_LEVEL = 0 
+						AND POSITION > 0
+						AND ARGUMENT_NAME IS NOT NULL
+					) A
+					LEFT OUTER JOIN TYPES_Q T ON A.TYPE_SUBNAME = UPPER(T.TYPE_NAME)
 				) A
-				LEFT OUTER JOIN TYPES_Q T ON A.TYPE_SUBNAME = UPPER(T.TYPE_NAME)
                 GROUP BY PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID
             )
             SELECT PRO.PROCEDURE_NAME, 
@@ -1776,6 +1819,7 @@ IS
             AND PRO.OWNER = p_Object_Owner
             AND PRO.OBJECT_TYPE = 'PACKAGE'
             AND PRO.PROCEDURE_NAME IS NOT NULL
+            AND NOT(PRO.PIPELINED = 'YES' and IMPLTYPENAME IS NOT NULL)
             ORDER BY PRO.SUBPROGRAM_ID, PRO.OVERLOAD;
         TYPE proc_tbl IS TABLE OF all_proc_cur%ROWTYPE;
         v_proc_tbl        proc_tbl;
@@ -1930,7 +1974,7 @@ IS
                     and v_proc_tbl(ind).PIPELINED = 'NO'
                     and v_proc_tbl(ind).TYPE_OBJECT_TYPE = 'PACKAGE'
                     and v_proc_tbl(ind).RETURN_TYPE != v_proc_tbl(ind).DEST_RETURN_TYPE
-                    and v_proc_tbl(ind).RETURN_DATA_TYPE = 'PL/SQL TABLE' 
+                    and v_proc_tbl(ind).RETURN_DATA_TYPE = 'PL/SQL TABLE'
                     and v_proc_tbl(ind).RETURN_RECORD_TYPE IS NOT NULL
                     then
                         v_sqltext := v_sqltext
