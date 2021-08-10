@@ -57,6 +57,82 @@ GRANT DROP ANY VIEW TO <schema_name>;
 GRANT MERGE ANY VIEW TO <schema_name>;
 
 */
+create or replace type STATEMENT_AGG_TYPE
+AUTHID CURRENT_USER
+AS OBJECT
+(
+   total clob,
+
+   static function
+		ODCIAggregateInitialize(sctx IN OUT STATEMENT_AGG_TYPE )
+		return number,
+
+   member function
+		ODCIAggregateIterate(self IN OUT STATEMENT_AGG_TYPE ,
+							 value IN clob )
+		return number,
+
+   member function
+		ODCIAggregateTerminate(self IN STATEMENT_AGG_TYPE,
+							   returnValue OUT  clob,
+							   flags IN number)
+		return number,
+
+   member function
+		ODCIAggregateMerge(self IN OUT STATEMENT_AGG_TYPE,
+						   ctx2 IN STATEMENT_AGG_TYPE)
+		return number
+);
+/
+
+create or replace type body STATEMENT_AGG_TYPE
+is
+
+	static function ODCIAggregateInitialize(sctx IN OUT STATEMENT_AGG_TYPE)
+	return number
+	is
+	begin
+	    sctx := STATEMENT_AGG_TYPE( null );
+	    return ODCIConst.Success;
+	end;
+
+	member function ODCIAggregateIterate(self IN OUT STATEMENT_AGG_TYPE,
+	                                     value IN clob )
+	return number
+	is
+	begin
+	    self.total := self.total || value || ';';
+	    return ODCIConst.Success;
+	end;
+
+	member function ODCIAggregateTerminate(self IN STATEMENT_AGG_TYPE,
+	                                       returnValue OUT clob,
+	                                       flags IN number)
+	return number
+	is
+	begin
+	    returnValue := self.total;
+	    return ODCIConst.Success;
+	end;
+
+	member function ODCIAggregateMerge(self IN OUT STATEMENT_AGG_TYPE,
+	                                   ctx2 IN STATEMENT_AGG_TYPE)
+	return number
+	is
+	begin
+	    self.total := self.total || ctx2.total;
+	    return ODCIConst.Success;
+	end;
+end;
+/
+
+
+CREATE or REPLACE FUNCTION STATEMENT_AGG(input clob )
+RETURN clob
+AUTHID CURRENT_USER
+PARALLEL_ENABLE AGGREGATE USING STATEMENT_AGG_TYPE;
+/
+
 
 CREATE OR REPLACE PACKAGE package_tracer
 AUTHID CURRENT_USER 
@@ -94,7 +170,7 @@ IS
         Package_Name    VARCHAR2(128)
     );
     TYPE tab_synonyms IS TABLE OF rec_synonyms;
-
+    	
     FUNCTION get_APEX_Packages_List RETURN tab_synonyms PIPELINED;
     FUNCTION get_Packages_List (
         p_Search_Name VARCHAR2 DEFAULT '%'
@@ -106,9 +182,9 @@ IS
         Package_Name    VARCHAR2(128),
         Is_Enabled_Switch VARCHAR2(32767),
         Is_Enabled      VARCHAR2(1),
-        Grant_Stats     VARCHAR2(32767),
-        Revoke_Stats    VARCHAR2(32767),
-        Synonym_Stats   VARCHAR2(32767),
+        Grant_Stats     CLOB,
+        Revoke_Stats    CLOB,
+        Synonym_Stats   CLOB,
         conflicting_objects VARCHAR2(32767),
         Error_Count     NUMBER
     );
@@ -377,18 +453,10 @@ IS
 			with ARGUMENTS_Q as (
 				-- function arguments and return values of type record or table
                 select 
-                	A.PACKAGE_NAME, A.OWNER, 
+                	T.PACKAGE_NAME, T.PACKAGE_OWNER, 
 					T.TYPE_NAME, T.ITEM_NAME, T.ITEM_TYPE, T.Nested_Table, T.Table_Type
-				from (        
-                    select distinct ARG.PACKAGE_NAME, ARG.OWNER, ARG.TYPE_SUBNAME
-                    from SYS.ALL_ARGUMENTS ARG
-                    where ARG.TYPE_NAME = ARG.PACKAGE_NAME 
-                    and ARG.TYPE_OWNER = ARG.OWNER
-                    and ARG.TYPE_SUBNAME IS NOT NULL
-                    and ARG.TYPE_OBJECT_TYPE = 'PACKAGE'
-                ) A, table(package_tracer.Pipe_Record_types(p_Package_Name=>A.PACKAGE_NAME, p_Package_Owner=>A.OWNER)) T
-                where A.TYPE_SUBNAME = UPPER(T.TYPE_NAME)
-                and T.Nested_Table = 'Y' 
+				from TABLE(Pipe_Package_Record_types) T
+                where T.Nested_Table = 'Y' 
 			)
             select
                 SYN.OWNER           Synonym_Owner, 
@@ -404,7 +472,7 @@ IS
 				select 1
 				from ARGUMENTS_Q A
 				where A.PACKAGE_NAME = SYN.TABLE_NAME
-				and A.OWNER = SYN.TABLE_OWNER
+				and A.PACKAGE_OWNER = SYN.TABLE_OWNER
             )
 */          and NOT EXISTS (
             	select * from SYS.ALL_ARGUMENTS A
@@ -464,10 +532,10 @@ IS
         for cur in (
             WITH DEPS AS (
                 SELECT Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME,
-                    LISTAGG(DEP.GRANT_STAT, '; ') WITHIN GROUP (ORDER BY GRANT_STAT) GRANT_STATS,
-                    LISTAGG(DEP.REVOKE_STAT, '; ') WITHIN GROUP (ORDER BY REVOKE_STAT) REVOKE_STATS,
-                    LISTAGG(DEP.SYNONYM_STAT, '; ') WITHIN GROUP (ORDER BY SYNONYM_STAT) SYNONYM_STATS
-                FROM table(get_Packages_List) SYN
+                    STATEMENT_AGG(DEP.GRANT_STAT) GRANT_STATS,
+                    STATEMENT_AGG(DEP.REVOKE_STAT) REVOKE_STATS,
+                    STATEMENT_AGG(DEP.SYNONYM_STAT) SYNONYM_STATS
+                FROM table(package_tracer.get_Packages_List) SYN
                 LEFT OUTER JOIN (
                     SELECT DA.Owner Object_Owner, DA.Name Object_Name,
                         case when PRI.Privilege IS NULL and DA.referenced_Owner != 'PUBLIC' then 
@@ -511,7 +579,8 @@ IS
                 GROUP BY Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME
             ), CONFLICTING_Q AS (
 					-- package defines types that are used for arguments in other packages
-				select A.OWNER, A.TYPE_NAME, LISTAGG(A.PACKAGE_NAME, ', ') WITHIN GROUP (ORDER BY A.PACKAGE_NAME) CONFLICTING_OBJECTS
+				select A.OWNER, A.TYPE_NAME, 
+					LISTAGG(A.PACKAGE_NAME, ', ') WITHIN GROUP (ORDER BY A.PACKAGE_NAME) CONFLICTING_OBJECTS
 				from (
 					select distinct A.OWNER, A.TYPE_NAME, A.PACKAGE_NAME 
 					from SYS.ALL_ARGUMENTS A
@@ -549,20 +618,18 @@ IS
                         WHERE OBJ.OBJECT_NAME = D.SYNONYM_NAME
                         AND OBJECT_TYPE = 'PACKAGE'
                     ) THEN 'Y' ELSE 'N' END IS_ENABLED,
-                    case when GRANT_STATS is not null then GRANT_STATS||';' end GRANT_STATS,
-                    case when REVOKE_STATS is not null then REVOKE_STATS||';' end REVOKE_STATS,
-                    case when SYNONYM_STATS is not null then SYNONYM_STATS||';' end SYNONYM_STATS,
+                    GRANT_STATS, REVOKE_STATS, SYNONYM_STATS,
                     (SELECT COUNT(*) 
                      FROM SYS.USER_ERRORS ERR
                      WHERE ERR.NAME = D.SYNONYM_NAME
                      AND ERR.TYPE LIKE 'PACKAGE%'
                     ) ERROR_COUNT
                 FROM DEPS D
-                UNION -- enabled local synonym packages
+                UNION ALL -- enabled local synonym packages
                 SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME, 'Y' IS_ENABLED,
-                    NULL GRANT_STATS, 
-                    NULL REVOKE_STATS, 
-                    'CREATE OR REPLACE ' || SYNONYM_STATS || ';' SYNONYM_STATS,
+                    TO_CLOB(NULL) GRANT_STATS, 
+                    TO_CLOB(NULL) REVOKE_STATS, 
+                    TO_CLOB('CREATE OR REPLACE ' || SYNONYM_STATS || ';') SYNONYM_STATS,
                     (SELECT COUNT(*) 
                      FROM SYS.USER_ERRORS ERR
                      WHERE ERR.NAME = D.SYNONYM_NAME
@@ -598,9 +665,9 @@ IS
         for cur in (
             WITH DEPS AS (
                 SELECT Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME,
-                    LISTAGG(DEP.GRANT_STAT, '; ') WITHIN GROUP (ORDER BY GRANT_STAT) GRANT_STATS,
-                    LISTAGG(DEP.REVOKE_STAT, '; ') WITHIN GROUP (ORDER BY REVOKE_STAT) REVOKE_STATS,
-                    LISTAGG(DEP.SYNONYM_STAT, '; ') WITHIN GROUP (ORDER BY SYNONYM_STAT) SYNONYM_STATS
+                    STATEMENT_AGG(DEP.GRANT_STAT) GRANT_STATS,
+                    STATEMENT_AGG(DEP.REVOKE_STAT) REVOKE_STATS,
+                    STATEMENT_AGG(DEP.SYNONYM_STAT) SYNONYM_STATS
                 FROM table(get_APEX_Packages_List) SYN
                 LEFT OUTER JOIN (
                     SELECT DA.Owner Object_Owner, DA.Name Object_Name,
@@ -644,7 +711,8 @@ IS
                 GROUP BY SYN.SYNONYM_NAME, SYN.PACKAGE_OWNER, SYN.PACKAGE_NAME
             ), CONFLICTING_Q AS (
 					-- package defines types that are used for arguments in other packages
-				select A.OWNER, A.TYPE_NAME, LISTAGG(A.PACKAGE_NAME, ', ') WITHIN GROUP (ORDER BY A.PACKAGE_NAME) CONFLICTING_OBJECTS
+				select A.OWNER, A.TYPE_NAME,
+					LISTAGG(A.PACKAGE_NAME, ', ') WITHIN GROUP (ORDER BY A.PACKAGE_NAME) CONFLICTING_OBJECTS
 				from (
 					select distinct A.OWNER, A.TYPE_NAME, A.PACKAGE_NAME 
 					from SYS.ALL_ARGUMENTS A
@@ -652,17 +720,15 @@ IS
 					and A.DATA_TYPE IN ('PL/SQL TABLE', 'PL/SQL RECORD', 'TABLE')
 					and A.TYPE_OWNER = A.OWNER
 					and A.TYPE_NAME != A.PACKAGE_NAME
-				) A 
+					union 
+					select DA.REFERENCED_OWNER OWNER, DA.REFERENCED_NAME TYPE_NAME, DA.NAME PACKAGE_NAME
+					from SYS.All_Dependencies DA
+					where DA.TYPE = 'PACKAGE'
+					and DA.OWNER = DA.REFERENCED_OWNER
+					and DA.REFERENCED_TYPE = 'PACKAGE'
+					and NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME IN ('STANDARD','DBMS_STANDARD'))
+				) A
 				group by A.OWNER, A.TYPE_NAME
-				union 
-				select DA.REFERENCED_OWNER OWNER, DA.REFERENCED_NAME TYPE_NAME, 
-					LISTAGG(DA.NAME , ', ') WITHIN GROUP (ORDER BY DA.NAME ) CONFLICTING_OBJECTS 
-				from SYS.All_Dependencies DA
-				where DA.TYPE = 'PACKAGE'
-				and DA.OWNER = DA.REFERENCED_OWNER
-				and DA.REFERENCED_TYPE = 'PACKAGE'
-				and NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME IN ('STANDARD','DBMS_STANDARD'))
-				group by DA.REFERENCED_NAME, DA.REFERENCED_OWNER
             )
             SELECT SYNONYM_NAME, PACKAGE_OWNER, PACKAGE_NAME,
                 APEX_ITEM.HIDDEN (p_idx => 1, p_value => SYNONYM_NAME, p_item_id => 'f01_'||ROWNUM, p_item_label => 'ROW_SELECTOR$') ||
@@ -671,9 +737,7 @@ IS
                   p_item_id => 'f02_'||ROWNUM, p_item_label => 'SWITCH_ENABLED') 
                 || APEX_ITEM.HIDDEN (p_idx => 3, p_value => IS_ENABLED, p_item_id => 'f03_' || ROWNUM , p_item_label => 'IS_ENABLED') IS_ENABLED_SWITCH,
                 IS_ENABLED,
-                GRANT_STATS,
-                REVOKE_STATS,
-                SYNONYM_STATS,
+                GRANT_STATS, REVOKE_STATS, SYNONYM_STATS,
                 CONFLICTING_OBJECTS,                
                 ERROR_COUNT
             FROM (
@@ -684,9 +748,7 @@ IS
                         WHERE OBJ.OBJECT_NAME = D.SYNONYM_NAME
                         AND OBJECT_TYPE = 'PACKAGE'
                     ) THEN 'Y' ELSE 'N' END IS_ENABLED,
-                    case when GRANT_STATS is not null then GRANT_STATS||';' end GRANT_STATS,
-                    case when REVOKE_STATS is not null then REVOKE_STATS||';' end REVOKE_STATS,
-                    case when SYNONYM_STATS is not null then SYNONYM_STATS||';' end SYNONYM_STATS,
+                    GRANT_STATS, REVOKE_STATS, SYNONYM_STATS,
                     (SELECT COUNT(*) 
                      FROM SYS.USER_ERRORS ERR
                      WHERE ERR.NAME = D.SYNONYM_NAME
@@ -2506,4 +2568,11 @@ call package_tracer.Disable('APEX_UTIL');
 
 select * from table(package_tracer.Dyn_Log_Call_List ('APEX_LANG'));
 
+-- uninstall:
+DROP Type STATEMENT_AGG_TYPE;
+/
+DROP Function STATEMENT_AGG;
+/
+DROP Package PACKAGE_TRACER;
+/
 */
