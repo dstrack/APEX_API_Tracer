@@ -27,7 +27,7 @@ prompt APPLICATION 103 - APEX API Tracer
 -- Application Export:
 --   Application:     103
 --   Name:            APEX API Tracer
---   Date and Time:   22:25 Tuesday August 10, 2021
+--   Date and Time:   00:38 Thursday August 12, 2021
 --   Exported By:     DIRK
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -105,7 +105,7 @@ wwv_flow_api.create_flow(
 ,p_public_user=>'APEX_PUBLIC_USER'
 ,p_proxy_server=>nvl(wwv_flow_application_install.get_proxy,'')
 ,p_no_proxy_domains=>nvl(wwv_flow_application_install.get_no_proxy_domains,'')
-,p_flow_version=>'Release 1.1.8'
+,p_flow_version=>'Release 1.1.9'
 ,p_flow_status=>'AVAILABLE_W_EDIT_LINK'
 ,p_flow_unavailable_text=>'This application is currently unavailable at this time.'
 ,p_exact_substitutions_only=>'Y'
@@ -118,7 +118,7 @@ wwv_flow_api.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'APEX API Tracer'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210810222521'
+,p_last_upd_yyyymmddhh24miss=>'20210812003823'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>9
 ,p_ui_type_name => null
@@ -10178,7 +10178,7 @@ wwv_flow_api.create_page(
 ,p_page_template_options=>'#DEFAULT#'
 ,p_required_role=>'MUST_NOT_BE_PUBLIC_USER'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210810123956'
+,p_last_upd_yyyymmddhh24miss=>'20210810230429'
 );
 wwv_flow_api.create_page_plug(
  p_id=>wwv_flow_api.id(261514034487997802)
@@ -10339,7 +10339,7 @@ wwv_flow_api.create_worksheet_rpt(
 ,p_report_alias=>'2622133'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'SYNONYM_NAME:IS_ENABLED_SWITCH:GRANT_STATS:REVOKE_STATS:SYNONYM_STATS:ERROR_COUNT::CONFLICTING_OBJECTS'
+,p_report_columns=>'SYNONYM_NAME:IS_ENABLED_SWITCH:GRANT_STATS:REVOKE_STATS:SYNONYM_STATS:ERROR_COUNT:'
 ,p_sort_column_1=>'SYNONYM_NAME'
 ,p_sort_direction_1=>'ASC'
 ,p_sort_column_2=>'0'
@@ -10608,7 +10608,7 @@ wwv_flow_api.create_worksheet_rpt(
 ,p_report_alias=>'2620994'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'SYNONYM_NAME:IS_ENABLED_SWITCH:PACKAGE_OWNER:PACKAGE_NAME:GRANT_STATS:REVOKE_STATS:SYNONYM_STATS:ERROR_COUNT:CONFLICTING_OBJECTS'
+,p_report_columns=>'SYNONYM_NAME:PACKAGE_OWNER:PACKAGE_NAME:IS_ENABLED_SWITCH:GRANT_STATS:REVOKE_STATS:SYNONYM_STATS:ERROR_COUNT:CONFLICTING_OBJECTS:'
 ,p_sort_column_1=>'SYNONYM_NAME'
 ,p_sort_direction_1=>'ASC'
 ,p_sort_column_2=>'0'
@@ -10623,7 +10623,7 @@ wwv_flow_api.create_worksheet_rpt(
 ,p_sort_direction_6=>'ASC'
 );
 wwv_flow_api.create_worksheet_condition(
- p_id=>wwv_flow_api.id(263326785916458460)
+ p_id=>wwv_flow_api.id(263426736985949039)
 ,p_report_id=>wwv_flow_api.id(262099305494125632)
 ,p_condition_type=>'FILTER'
 ,p_allow_delete=>'Y'
@@ -12041,7 +12041,7 @@ wwv_flow_api.create_page(
 ,p_autocomplete_on_off=>'OFF'
 ,p_page_template_options=>'#DEFAULT#:ui-dialog--stretch'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210810122804'
+,p_last_upd_yyyymmddhh24miss=>'20210811200852'
 );
 wwv_flow_api.create_page_plug(
  p_id=>wwv_flow_api.id(263404003221861777)
@@ -12052,10 +12052,20 @@ wwv_flow_api.create_page_plug(
 ,p_plug_display_point=>'BODY'
 ,p_query_type=>'SQL'
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select * from table(package_tracer.Pipe_Package_Record_types)',
+'select  Synonym_Owner,',
+'    	Synonym_Name,',
+'    	Package_Owner,',
+'    	Package_Name,',
+'    	Type_name,',
+'    	Item_Name,',
+'    	Item_Type,',
+'    	Index_by,',
+'    	Nested_Table,',
+'    	Table_Type',
+'from table(package_tracer.Pipe_Package_Record_types)',
 ''))
-,p_query_owner=>'APEX_190100'
 ,p_plug_source_type=>'NATIVE_IR'
+,p_plug_query_options=>'DERIVED_REPORT_COLUMNS'
 );
 wwv_flow_api.create_worksheet(
  p_id=>wwv_flow_api.id(263404161844861777)
@@ -12161,6 +12171,14 @@ wwv_flow_api.create_worksheet_column(
 ,p_heading_alignment=>'LEFT'
 ,p_tz_dependent=>'N'
 );
+wwv_flow_api.create_worksheet_column(
+ p_id=>wwv_flow_api.id(263065641310062007)
+,p_db_column_name=>'INDEX_BY'
+,p_display_order=>19
+,p_column_identifier=>'J'
+,p_column_label=>'Index By'
+,p_column_type=>'STRING'
+);
 wwv_flow_api.create_worksheet_rpt(
  p_id=>wwv_flow_api.id(263415449905126958)
 ,p_application_user=>'APXWS_DEFAULT'
@@ -12168,7 +12186,7 @@ wwv_flow_api.create_worksheet_rpt(
 ,p_report_alias=>'2634155'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'SYNONYM_OWNER:SYNONYM_NAME:PACKAGE_OWNER:PACKAGE_NAME:TYPE_NAME:ITEM_NAME:ITEM_TYPE:NESTED_TABLE:TABLE_TYPE'
+,p_report_columns=>'SYNONYM_OWNER:SYNONYM_NAME:PACKAGE_OWNER:PACKAGE_NAME:TYPE_NAME:ITEM_NAME:ITEM_TYPE:NESTED_TABLE:TABLE_TYPE:INDEX_BY'
 );
 end;
 /
@@ -13034,11 +13052,12 @@ wwv_flow_api.create_install_script(
 '    ) RETURN VARCHAR2;',
 '',
 '    TYPE rec_record_fields IS RECORD (',
-'    	Type_name 		VARCHAR2(128),',
-'    	Item_Name		VARCHAR2(128),',
-'    	Item_Type		VARCHAR2(128),',
+'    	Type_name 		VARCHAR2(512),',
+'    	Item_Name		VARCHAR2(512),',
+'    	Item_Type		VARCHAR2(512),',
+'    	Index_by		VARCHAR2(512),',
 '    	Nested_Table	VARCHAR2(1),',
-'    	Table_Type 		VARCHAR2(128)',
+'    	Table_Type 		VARCHAR2(512)',
 '    );',
 '    TYPE tab_record_fields IS TABLE OF rec_record_fields;',
 '    -- list record and table types of a package',
@@ -13052,11 +13071,12 @@ wwv_flow_api.create_install_script(
 '    	Synonym_Name	VARCHAR2(128),',
 '    	Package_Owner	VARCHAR2(128),',
 '    	Package_Name	VARCHAR2(128),',
-'    	Type_name 		VARCHAR2(128),',
-'    	Item_Name		VARCHAR2(128),',
-'    	Item_Type		VARCHAR2(128),',
+'    	Type_name 		VARCHAR2(512),',
+'    	Item_Name		VARCHAR2(512),',
+'    	Item_Type		VARCHAR2(512),',
+'    	Index_by		VARCHAR2(512),',
 '    	Nested_Table	VARCHAR2(1),',
-'    	Table_Type 		VARCHAR2(128)',
+'    	Table_Type 		VARCHAR2(512)',
 '    );',
 '    TYPE tab_package_record_type IS TABLE OF rec_package_record_type;',
 '    ',
@@ -13201,7 +13221,7 @@ wwv_flow_api.create_install_script(
 '				-- function arguments and return values of type record or table',
 '                select ',
 '                	T.PACKAGE_NAME, T.PACKAGE_OWNER, ',
-'					T.TYPE_NAME, T.ITEM_NAME, T.ITEM_TYPE, T.Nested_Table, T.Table_Type',
+'					T.TYPE_NAME, T.ITEM_NAME, T.ITEM_TYPE, T.Index_By, T.Nested_Table, T.Table_Type',
 '				from TABLE(Pipe_Package_Record_types) T',
 '                where T.Nested_Table = ''Y'' ',
 '			)',
@@ -13244,12 +13264,12 @@ wwv_flow_api.create_install_script(
 '                and REGEXP_INSTR(SRC.text, ''\s+wrapped\s+'', 1, 1, 0, ''i'') > 0',
 '                and line = 1',
 '            )',
-'            and not (SYN.TABLE_OWNER = ''SYS'' -- package defines new record types for function arguments',
+'            and not (SYN.TABLE_OWNER = ''SYS'' -- package defines nested record types for function arguments',
 '            	and SYN.TABLE_NAME IN (',
 '                	''DBMS_UTILITY'',''DBMS_STATS'',''DBMS_STAT_FUNCS'',''DBMS_DEBUG'',''DBMS_TF'',',
 '                	''DBMS_DATA_MINING_TRANSFORM'',''DBMS_HS_PARALLEL'',''OWA_COOKIE'',''OWA_TEXT'' )',
 '            )',
-'            and not (SYN.TABLE_OWNER LIKE ''APEX%'' -- package defines new record types for function arguments',
+'            and not (SYN.TABLE_OWNER LIKE ''APEX%'' -- package defines nested record types for function arguments',
 '            	and SYN.TABLE_NAME IN (',
 '            		''WWV_FLOW_EXEC_API'',''WWV_FLOW_PLUGIN_API'',''WWV_FLOW_PLUGIN_UTIL'',''WWV_FLOW_WORKSPACE_USER_API'',',
 '            		''WWV_FLOW_JSON'', ''WWV_FLOW_DATA_PARSER'' )',
@@ -13258,6 +13278,7 @@ wwv_flow_api.create_install_script(
 '            	''API_TRACE'',				-- because package_tracer is dependent on this object',
 '            	''PACKAGE_TRACER'',			-- because package_tracer is dependent on this object',
 '            	''APEX_DEBUG'', 				-- because package_tracer is dependent on this synonyms',
+'            	''APEX_APPLICATION'',			-- because global variables are defined',
 '                ''CTX_DOC'',					-- package defines nested record types for function arguments',
 '                ''DBMS_DIMENSION'', 			-- PLS-00307: Zu viele Deklarationen von ''VALIDATE_DIMENSION'' entsprechen diesem Aufruf',
 '                ''DBMS_SODA_USER_ADMIN'', 	-- PLS-00201',
@@ -13333,15 +13354,16 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '					from SYS.ALL_ARGUMENTS A',
 '					where A.TYPE_OBJECT_TYPE = ''PACKAGE''',
 '					and A.DATA_TYPE IN (''PL/SQL TABLE'', ''PL/SQL RECORD'', ''TABLE'')',
-'					and A.TYPE_OWNER = A.OWNER',
-'					and A.TYPE_NAME != A.PACKAGE_NAME',
-'					union ',
+'					and not(A.TYPE_OWNER = A.OWNER',
+'					    and A.TYPE_NAME = A.PACKAGE_NAME)',
+'				/*	union  -- produces false prositives for function default values',
 '					select DA.REFERENCED_OWNER OWNER, DA.REFERENCED_NAME TYPE_NAME, DA.NAME PACKAGE_NAME',
 '					from SYS.All_Dependencies DA',
 '					where DA.TYPE = ''PACKAGE''',
 '					and DA.OWNER = DA.REFERENCED_OWNER',
 '					and DA.REFERENCED_TYPE = ''PACKAGE''',
 '					and NOT(DA.REFERENCED_OWNER = ''SYS'' AND DA.REFERENCED_NAME IN (''STANDARD'',''DBMS_STANDARD''))',
+'				*/',
 '				) A ',
 '				group by A.OWNER, A.TYPE_NAME',
 '            )',
@@ -13443,10 +13465,7 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '                        ON Pri.table_Schema = DA.referenced_Owner ',
 '                        AND Pri.table_Name = DA.referenced_Name',
 '                        AND Pri.type = DA.referenced_Type',
-'                        AND PRI.Grantee IN (v_Dest_Schema, ''PUBLIC'')',
-'                        AND PRI.privilege IN (''EXECUTE'', ''SELECT'')',
-'                    LEFT OUTER JOIN ( -- no VIEW OR SYNONYM with this name already exists',
-'                   '))
+'                  '))
 );
 end;
 /
@@ -13454,7 +13473,10 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(261939746109436819)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'     SELECT DB.REFERENCED_NAME, DB.REFERENCED_OWNER',
+'      AND PRI.Grantee IN (v_Dest_Schema, ''PUBLIC'')',
+'                        AND PRI.privilege IN (''EXECUTE'', ''SELECT'')',
+'                    LEFT OUTER JOIN ( -- no VIEW OR SYNONYM with this name already exists',
+'                        SELECT DB.REFERENCED_NAME, DB.REFERENCED_OWNER',
 '                        FROM SYS.ALL_DEPENDENCIES DB',
 '                        WHERE DB.OWNER = v_Dest_Schema',
 '                        AND DB.NAME = DB.REFERENCED_NAME',
@@ -13473,15 +13495,16 @@ wwv_flow_api.append_to_install_script(
 '					from SYS.ALL_ARGUMENTS A',
 '					where A.TYPE_OBJECT_TYPE = ''PACKAGE''',
 '					and A.DATA_TYPE IN (''PL/SQL TABLE'', ''PL/SQL RECORD'', ''TABLE'')',
-'					and A.TYPE_OWNER = A.OWNER',
-'					and A.TYPE_NAME != A.PACKAGE_NAME',
-'					union ',
+'					and not(A.TYPE_OWNER = A.OWNER',
+'						and A.TYPE_NAME != A.PACKAGE_NAME)',
+'				/*	union -- produces false prositives for function default values',
 '					select DA.REFERENCED_OWNER OWNER, DA.REFERENCED_NAME TYPE_NAME, DA.NAME PACKAGE_NAME',
 '					from SYS.All_Dependencies DA',
 '					where DA.TYPE = ''PACKAGE''',
 '					and DA.OWNER = DA.REFERENCED_OWNER',
 '					and DA.REFERENCED_TYPE = ''PACKAGE''',
 '					and NOT(DA.REFERENCED_OWNER = ''SYS'' AND DA.REFERENCED_NAME IN (''STANDARD'',''DBMS_STANDARD''))',
+'				*/',
 '				) A',
 '				group by A.OWNER, A.TYPE_NAME',
 '            )',
@@ -14024,15 +14047,7 @@ wwv_flow_api.append_to_install_script(
 '                || ''EXECUTE IMMEDIATE api_trace.Dyn_Log_Exit''',
 '                || case when OVERLOAD is not null then ''(p_overload => '' || OVERLOAD || '')'' end',
 '                || case when PARAM_LIST_OUT IS NOT NULL then ',
-'                    chr(10) ',
-'                    || rpad('' '', p_Indent+4)',
-'                    || ''USING ''',
-'                    || PARAM_LIST_OUT',
-'                end',
-'                || '';'' ',
-'                || v_Condition_End',
-'            WHEN p_Compact = ''Y'' and p_Logging_Start_Enabled = ''N'' THEN ',
-'                v_Condi'))
+'                    c'))
 );
 null;
 end;
@@ -14041,7 +14056,15 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(261939746109436819)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'tion_Start',
+'hr(10) ',
+'                    || rpad('' '', p_Indent+4)',
+'                    || ''USING ''',
+'                    || PARAM_LIST_OUT',
+'                end',
+'                || '';'' ',
+'                || v_Condition_End',
+'            WHEN p_Compact = ''Y'' and p_Logging_Start_Enabled = ''N'' THEN ',
+'                v_Condition_Start',
 '                || chr(10)',
 '                || rpad('' '', p_Indent+4)',
 '                || ''EXECUTE IMMEDIATE api_trace.Dyn_Log_Call''',
@@ -14293,7 +14316,7 @@ wwv_flow_api.append_to_install_script(
 '        v_Record_Text VARCHAR2(32767);',
 '        TYPE t_Record_Type IS TABLE OF VARCHAR2(1) INDEX BY VARCHAR2(1024);',
 '        v_Types_List t_Record_Type :=  t_Record_Type();',
-'        v_Item_Pattern CONSTANT VARCHAR2(100) := ''^\s*(\S+)\s+(.+?),*\s*$'';',
+'        v_Item_Pattern CONSTANT VARCHAR2(100) := ''(\S+)\s+(.+?(\(\S+?\))?)(,|$)''; ',
 '		v_Item_Name VARCHAR2(1000);',
 '		v_Item_Type VARCHAR2(1000);',
 '		v_Index_by VARCHAR2(1000);',
@@ -14318,6 +14341,7 @@ wwv_flow_api.append_to_install_script(
 '            Log_Elapsed_Time(v_Timemark, ''-- Pipe_Record_types Get_Package_Source '');       ',
 '        end if;',
 '		v_Offset := 1;',
+'		-- load depended object types ',
 '		for cur in (',
 '			select lower(Da.referenced_Name) Type_Name',
 '			from SYS.ALL_DEPENDENCIES DA ',
@@ -14328,6 +14352,7 @@ wwv_flow_api.append_to_install_script(
 '		) loop ',
 '			v_Types_List(cur.Type_Name) := ''Y'';',
 '		end loop;',
+'		-- parse source for all types; excluding subtypes',
 '		for ind in 1..100 loop',
 '			v_Record_Type := REGEXP_SUBSTR(v_Clob, v_Types_Pattern, v_Offset, 1, ''in'', 1);',
 '			exit when v_Record_Type IS NULL;',
@@ -14347,10 +14372,13 @@ wwv_flow_api.append_to_install_script(
 '			for ind2 in 1..100 loop',
 '				v_Item_Name := REGEXP_SUBSTR(v_Record_Text, v_Item_Pattern, v_Offset2, 1, ''im'', 1);',
 '				exit when v_Item_Name IS NULL;',
+'				v_Item_Name := SUBSTR(v_Item_Name, 1, 512);',
 '				v_Item_Type := REGEXP_SUBSTR(v_Record_Text, v_Item_Pattern, v_Offset2, 1, ''im'', 2);',
+'				v_Item_Type := SUBSTR(v_Item_Type, 1, 512);',
 '				v_out_row.Type_name	:= v_Record_Type;',
 '				v_out_row.Item_Name	:= v_Item_Name;',
 '				v_out_row.Item_Type	:= v_Item_Type;',
+'				v_out_row.Index_by  := null;',
 '				v_out_row.Table_Type := ''RECORD'';',
 '				if v_Types_List.EXISTS(lower(v_Item_Type)) then ',
 '					v_out_row.Nested_Table := ''Y'';',
@@ -14371,8 +14399,9 @@ wwv_flow_api.append_to_install_script(
 '			exit when v_Record_Type IS NULL;',
 '			v_Item_Type := REGEXP_SUBSTR(v_Clob, v_Table_Pattern, v_Offset, 1, ''in'', 2);',
 '			v_out_row.Type_name	:= v_Record_Type;',
-'			v_out_row.Item_Name	:= v_Item_Type;',
-'			v_out_row.Item_Type	:= null;',
+'			v_out_row.Item_Name	:= null;',
+'			v_out_row.Item_Type	:= v_Item_Type ;',
+'			v_out_row.Index_by  := null;',
 '			v_out_row.Table_Type := ''TABLE'';',
 '			if v_Types_List.EXISTS(lower(v_Item_Type)) then ',
 '				v_out_row.Nested_Table := v_Types_List(lower(v_Item_Type));',
@@ -14390,8 +14419,9 @@ wwv_flow_api.append_to_install_script(
 '			v_Item_Type := REGEXP_SUBSTR(v_Clob, v_PL_Table_Pattern,  v_Offset, 1, ''in'', 2);',
 '			v_Index_by := REGEXP_SUBSTR(v_Clob, v_PL_Table_Pattern,  v_Offset, 1, ''in'', 3);',
 '			v_out_row.Type_name	:= v_Record_Type;',
-'			v_out_row.Item_Name	:= v_Item_Type;',
-'			v_out_row.Item_Type	:= v_Index_by;',
+'			v_out_row.Item_Name	:= null;',
+'			v_out_row.Item_Type	:= v_Item_Type;',
+'			v_out_row.Index_by	:= v_Index_by;',
 '			v_out_row.Table_Type := ''PL/SQL TABLE'';',
 '			if v_Types_List.EXISTS(lower(v_Item_Type)) then ',
 '				v_out_row.Nested_Table := v_Types_List(lower(v_Item_Type));',
@@ -14415,7 +14445,7 @@ wwv_flow_api.append_to_install_script(
 '			select ',
 '				A.Synonym_Owner, A.Synonym_Name,',
 '				A.Package_Owner, A.Package_Name, ',
-'				T.Type_Name, T.Item_Name, T.Item_Type, T.Nested_Table, T.Table_Type',
+'				T.Type_Name, T.Item_Name, T.Item_Type, T.Index_By, T.Nested_Table, T.Table_Type',
 '			from (        ',
 '				select',
 '					SYN.OWNER           Synonym_Owner, ',
@@ -14441,16 +14471,21 @@ wwv_flow_api.append_to_install_script(
 '    IS ',
 '        v_Record_Text VARCHAR2(32767);',
 '        v_pattern CONSTANT VARCHAR2(100) := ''TYPE\s+''||p_Type_Subname||''\s+IS\s+RECORD\s*\((.+?)\);'';',
-'		v_Item VARCHAR2(32767);',
+'        v_Item_Pattern CONSTANT VARCHAR2(100) := ''(\S+)\s+(.+?(\(\S+?\))?)(,|$)''; ',
+'        v_Offset2 PLS_INTEGER;',
+'		v_Item_Name VARCHAR2(32767);',
 '		v_Result VARCHAR2(32767);',
 '    BEGIN ',
 '        v_Record_Text := REGEXP_SUBSTR(p_Package_Head, v_pattern, 1, 1, ''in'', 1);',
+'		v_Offset2 := 1;',
 '		for ind in 1..200 loop',
-'			v_Item := REGEXP_SUBSTR(v_Record_Text, ''^\s*(\S+)'', 1, ind, ''im'', 1);',
-'			exit when v_Item IS NULL;',
+'			v_Item_Name := REGEXP_SUBSTR(v_Record_Text, v_Item_Pattern, v_Offset2, 1, ''im'', 1);',
+'			-- v_Item_Name := REGEXP_SUBSTR(v_Record_Text, ''^\s*(\S+)'', 1, ind, ''im'', 1);',
+'			exit when v_Item_Name IS NULL;',
 '			v_Result := v_Result ',
 '			|| case when ind > 1 then '','' end',
-'			|| p_Variable_Name || ''.'' || v_Item;',
+'			|| p_Variable_Name || ''.'' || v_Item_Name;',
+'			v_Offset2 := REGEXP_INSTR(v_Record_Text, v_Item_Pattern, v_Offset2, 1, 1, ''im'');',
 '		end loop;',
 '        return v_Result;',
 '    END Get_Record_Fields;',
@@ -14474,21 +14509,20 @@ wwv_flow_api.append_to_install_script(
 '        CURSOR all_proc_cur',
 '        IS',
 '            WITH TYPES_Q AS (',
-'            	SELECT TYPE_NAME, ITEM_NAME, -- table row type; basic datatype or record type name',
-'            		ITEM_TYPE, -- index by',
+'            	SELECT TYPE_NAME, ITEM_TYPE, INDEX_BY, -- table row type; basic datatype or record type name',
 '            		NESTED_TABLE, TABLE_TYPE,',
-'            		case when RECORD_FIELDS is not null then ITEM_NAME end RECORD_TYPE, ',
+'            		case when RECORD_FIELDS is not null then ITEM_TYPE end RECORD_TYPE, ',
 '            		RECORD_FIELDS',
 '           		FROM (',
-'					SELECT TYPE_NAME, ITEM_NAME, ITEM_TYPE, NESTED_TABLE, TABLE_TYPE,',
+'					SELECT TYPE_NAME, ITEM_TYPE, INDEX_BY, NESTED_TABLE, TABLE_TYPE,',
 '						case when NESTED_TABLE = ''Y'' ',
-'								or (INSTR(UPPER(ITEM_NAME),''%TYPE'') = 0 -- subtype',
-'								and package_tracer.Is_Printable_Type(UPPER(REGEXP_REPLACE (ITEM_NAME, ''\(.+?\)''))) = ''NO'' -- pls_type',
+'								or (INSTR(UPPER(ITEM_TYPE),''%TYPE'') = 0 -- subtype',
+'								and package_tracer.Is_Printable_Type(UPPER(REGEXP_REPLACE (ITEM_TYPE, ''\(.+?\)''))) = ''NO'' -- pls_type',
 '								)',
 '							then ',
 '								package_tracer.Get_Record_Fields(',
 '									p_Package_Head=>v_Header, ',
-'									p_Type_Subname=>ITEM_NAME,',
+'									p_Type_Subname=>ITEM_TYPE,',
 '									p_Variable_Name=>''#VAR#'')',
 '						end RECORD_FIELDS',
 '					FROM package_tracer.Pipe_Record_types(p_Package_Name=>p_Object_Name, p_Package_Owner=>p_Object_Owner)',
@@ -14500,7 +14534,7 @@ wwv_flow_api.append_to_install_script(
 '                        A.PLS_TYPE RETURN_PLS_TYPE, ',
 '                        A.DATA_TYPE RETURN_DATA_TYPE,',
 '                        A.TYPE_SUBNAME RETURN_TYPE_NAME,',
-'                        NVL(T.ITEM_TYPE, ''PLS_INTEGER'') RETURN_IDX_TYPE,',
+'                        NVL(T.INDEX_BY, ''PLS_INTEGER'') RETURN_IDX_TYPE,',
 '                        T.RECORD_TYPE RETURN_RECORD_TYPE,',
 '                        T.RECORD_FIELDS RETURN_RECORD_FIELDS,',
 '                        A.CHAR_USED,',
@@ -14545,18 +14579,14 @@ wwv_flow_api.append_to_install_script(
 '                        		end',
 '                        		|| case when DATA_TYPE = ''PL/SQL TABLE'' and ITEM_TYPE IS NOT NULL and RECORD_TYPE IS NOT NULL',
 '                        			then '';''||chr(10)||chr(9)',
-'                        				||''idx'' || A.POSITION || '' '' || ITEM_TYPE',
+'                        				||''idx'' || A.POSITION || '' '' || INDEX_BY',
 '                        		end, '';''||chr(10)||chr(9)) WITHIN GROUP (ORDER BY POSITION) ARG_DECLARE_IN,',
 '                         LISTAGG(case when ARG_PREFIX IS NOT NULL and IN_OUT IN (''IN/OUT'', ''IN'') then ',
 '                         			case when DATA_TYPE = ''TABLE'' and RECORD_TYPE IS NOT NULL and NESTED_TABLE = ''Y'' then  ',
 '										''FOR idx IN 1 .. '' || ARGUMENT_NAME || ''.COUNT LOOP'' || chr(10)||RPAD('' '', 8)',
 '										|| ARG_PREFIX || ARGUMENT_NAME || ''(idx) := ''',
 '										|| LOWER(A.OWNER || ''.'' || A.PACKAGE_NAME || ''.'' || RECORD_TYPE) || ''(''',
-'										|| /*package_tracer.Get_Record_Fields(',
-'											p_Package_Head=>v_Header, ',
-'											p_Type_Subname=>RECORD_TYPE, ',
-'											p_Variable_Name=> ARGUMENT_NAME|| ''(idx)'') */',
-'											REPLACE(RECORD_FIELDS, ''#VAR#'', ARGUMENT_NAME|| ''(idx)'')',
+'										|| REPLACE(RECORD_FIELDS, ''#VAR#'', ARGUMENT_NAME|| ''(idx)'')',
 '										|| '');'' || chr(10)||RPAD('' '', 4)',
 '										|| ''END LOOP''',
 '									when DATA_TYPE = ''PL/SQL TABLE'' and ITEM_TYPE IS NOT NULL and RECORD_TYPE IS NOT NULL',
@@ -14566,11 +14596,7 @@ wwv_flow_api.append_to_install_script(
 '										|| ARG_PREFIX || ARGUMENT_NAME || ''(idx'' || A.POSITION || '') := ''',
 '										|| case when RECORD_TYPE IS NOT NULL then ',
 '												LOWER(A.OWNER || ''.'' || A.PACKAGE_NAME || ''.'' || RECORD_TYPE) || ''(''',
-'												|| /* package_tracer.Get_Record_Fields(',
-'													p_Package_Head=>v_Header, ',
-'													p_Type_Subname=>RECORD_TYPE, ',
-'													p_Variable_Name=> ARGUMENT_NAME|| ''(idx'' || A.POSITION || '')'') */',
-'													REPLACE(RECORD_FIELDS, ''#VAR#'', ARGUMENT_NAME|| ''(idx'' || A.POSITION || '')'')',
+'												|| REPLACE(RECORD_FIELDS, ''#VAR#'', ARGUMENT_NAME|| ''(idx'' || A.POSITION || '')'')',
 '												|| '');'' ',
 '											else ',
 '												ARGUMENT_NAME|| ''(idx'' || A.POSITION || '');''',
@@ -14598,11 +14624,7 @@ wwv_flow_api.append_to_install_script(
 '										''FOR idx IN 1 .. '' || ARGUMENT_NAME || ''.COUNT LOOP'' || chr(10)||RPAD('' '', 8)',
 '										|| ARGUMENT_NAME || ''(idx) := ''',
 '										|| RECORD_TYPE || ''(''',
-'										|| /*package_tracer.Get_Record_Fields(',
-'											p_Package_Head=>v_Header, ',
-'											p_Type_Subname=>RECORD_TYPE, ',
-'											p_Variable_Name=> ARG_PREFIX || ARGUMENT_NAME|| ''(idx)'') */',
-'											REPLACE(RECORD_FIELDS, ''#VAR#'', ARG_PREFIX || ARGUMENT_NAME|| ''(idx)'')',
+'										|| REPLACE(RECORD_FIELDS, ''#VAR#'', ARG_PREFIX || ARGUMENT_NAME|| ''(idx)'')',
 '										|| '');'' || chr(10)||RPAD('' '', 4)',
 '										|| ''END LOOP''',
 '									',
@@ -14612,11 +14634,7 @@ wwv_flow_api.append_to_install_script(
 '										|| ARGUMENT_NAME || ''('' || ''idx'' || A.POSITION || '') := ''',
 '										|| case when RECORD_TYPE IS NOT NULL then ',
 '												RECORD_TYPE || ''(''',
-'												|| /*package_tracer.Get_Record_Fields(',
-'													p_Package_Head=>v_Header, ',
-'													p_Type_Subname=>RECORD_TYPE, ',
-'													p_Variable_Name=> ARG_PREFIX || ARGUMENT_NAME|| ''('' || ''idx'' || A.POSITION || '')'') */',
-'													REPLACE(RECORD_FIELDS, ''#VAR#'', ARG_PREFIX || ARGUMENT_NAME|| ''('' || ''idx'' || A.POSITION || '')'')',
+'												|| REPLACE(RECORD_FIELDS, ''#VAR#'', ARG_PREFIX || ARGUMENT_NAME|| ''('' || ''idx'' || A.POSITION || '')'')',
 '												|| '');'' ',
 '											else ',
 '												ARG_PREFIX || ARGUMENT_NAME|| ''(idx'' || A.POSITION || '');''',
@@ -14632,7 +14650,7 @@ wwv_flow_api.append_to_install_script(
 '				FROM (',
 '					SELECT PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID, ',
 '						ARGUMENT_NAME, DATA_TYPE, POSITION, TYPE_SUBNAME, IN_OUT, ARGUMENT_TYPE, ARG_PREFIX, ',
-'						T.RECORD_TYPE, T.RECORD_FIELDS, T.ITEM_TYPE, T.NESTED_TABLE',
+'						T.RECORD_TYPE, T.RECORD_FIELDS, T.ITEM_TYPE, T.NESTED_TABLE, T.INDEX_BY',
 '					FROM (SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, ',
 '								LOWER(ARGUMENT_NAME) ARGUMENT_NAME,',
 '								DATA_TYPE, POSITION, TYPE_SUBNAME, IN_OUT, ',
@@ -14689,8 +14707,7 @@ wwv_flow_api.append_to_install_script(
 '            LEFT OUTER JOIN ARGUMENTS_Q ARG ',
 '                    ON PRO.OBJECT_NAME = ARG.PACKAGE_NAME',
 '                    AND PRO.OWNER = ARG.OWNER',
-'                    AND PRO.PROCEDURE_NAME = ARG.PROCEDURE_NAME',
-'                 '))
+' '))
 );
 null;
 end;
@@ -14699,7 +14716,8 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(261939746109436819)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'   AND PRO.SUBPROGRAM_ID = ARG.SUBPROGRAM_ID',
+'                   AND PRO.PROCEDURE_NAME = ARG.PROCEDURE_NAME',
+'                    AND PRO.SUBPROGRAM_ID = ARG.SUBPROGRAM_ID',
 '            WHERE PRO.OBJECT_NAME = p_Object_Name',
 '            AND PRO.OWNER = p_Object_Owner',
 '            AND PRO.OBJECT_TYPE = ''PACKAGE''',
@@ -14875,11 +14893,7 @@ wwv_flow_api.append_to_install_script(
 '						|| ''WHILE lv_idx IS NOT NULL LOOP'' || chr(10)||RPAD('' '', 8)',
 '						|| p_Variable_Name || ''(lv_idx) := ''',
 '						|| LOWER(p_Package_Name || ''.'' ||v_proc_tbl(ind).RETURN_RECORD_TYPE) || ''(''',
-'						|| /*package_tracer.Get_Record_Fields(',
-'							p_Package_Head=>v_Header, ',
-'							p_Type_Subname=>v_proc_tbl(ind).RETURN_RECORD_TYPE, ',
-'							p_Variable_Name=> ''lv_temp(lv_idx)'') */',
-'							REPLACE(v_proc_tbl(ind).RETURN_RECORD_FIELDS, ''#VAR#'', ''lv_temp(lv_idx)'')',
+'						|| REPLACE(v_proc_tbl(ind).RETURN_RECORD_FIELDS, ''#VAR#'', ''lv_temp(lv_idx)'')',
 '						|| '');'' || chr(10)||RPAD('' '', 8)',
 '						|| ''lv_idx := lv_temp.NEXT(lv_idx);'' || chr(10)||RPAD('' '', 4)',
 '						|| ''END LOOP;'' || chr(10)',
@@ -15034,21 +15048,6 @@ wwv_flow_api.append_to_install_script(
 '              RAISE_APPLICATION_ERROR(-20002, ''The package '' || v_Synonym_Name || '' already exists is the current schema.'');',
 '            -- option: the package is renamed and the tracing package takes it''s name.',
 '        end if;        ',
-'/*',
-'		select COUNT(*) into v_Count',
-'        from SYS.All_Arguments ARG',
-'        where ARG.Type_Name = ARG.Package_Name',
-'        and ARG.Package_Name = v_Package_Name_Out ',
-'        and ARG.owner = v_Package_Owner_Out',
-'        and ARG.argument_name IS NOT NULL -- unsuported argument type',
-'        and ARG.TYPE_OBJECT_TYPE = ''PACKAGE''',
-'        and ARG.DATA_TYPE = ''PL/SQL TABLE''',
-'        ;',
-'        if v_Count > 0 then ',
-unistr('            RAISE_APPLICATION_ERROR(-20003, ''The package '' || v_Synonym_Name || '' is defining table types for function arguments and can\00B4t be traced.'');'),
-'            return;',
-'        end if;',
-'*/',
 '		if g_debug then',
 '            Log_Elapsed_Time(v_Timemark, ''-- Checked for table or record types'');       ',
 '        end if;',
@@ -15269,16 +15268,7 @@ unistr('            RAISE_APPLICATION_ERROR(-20003, ''The package '' || v_Synony
 '                select 1 -- no dependencies on the local supporting synonym',
 '                from SYS.ALL_DEPENDENCIES LD ',
 '                where LD.referenced_Owner = SYN.owner',
-'           '))
-);
-null;
-end;
-/
-begin
-wwv_flow_api.append_to_install_script(
- p_id=>wwv_flow_api.id(261939746109436819)
-,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'     AND LD.referenced_Name = SYN.synonym_Name',
+'                AND LD.referenced_Name = SYN.synonym_Name',
 '                and LD.referenced_Type = ''SYNONYM''',
 '                and LD.Owner = SYN.owner',
 '            )',
@@ -15295,7 +15285,16 @@ wwv_flow_api.append_to_install_script(
 '        if v_Synonym_Text IS NOT NULL AND INSTR(v_Synonym_Text, ''PUBLIC'') != 1 then ',
 '            v_Synonym_Text := ''CREATE '' || v_Synonym_Text;',
 '            if p_Use_Dbms_Output then',
-'                DBMS_OUTPUT.PUT_LINE (v_Synonym_Text||'';'');',
+'                DBMS_OUTPUT.PUT_LINE (v_Synonym_Text||'';'))
+);
+null;
+end;
+/
+begin
+wwv_flow_api.append_to_install_script(
+ p_id=>wwv_flow_api.id(261939746109436819)
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+''');',
 '            end if;',
 '            if p_Do_Execute then',
 '                EXECUTE IMMEDIATE v_Synonym_Text;',
