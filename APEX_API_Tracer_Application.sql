@@ -27,7 +27,7 @@ prompt APPLICATION 103 - APEX API Tracer
 -- Application Export:
 --   Application:     103
 --   Name:            APEX API Tracer
---   Date and Time:   00:38 Thursday August 12, 2021
+--   Date and Time:   09:35 Thursday August 12, 2021
 --   Exported By:     DIRK
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -118,7 +118,7 @@ wwv_flow_api.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'APEX API Tracer'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210812003823'
+,p_last_upd_yyyymmddhh24miss=>'20210812093524'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>9
 ,p_ui_type_name => null
@@ -13305,7 +13305,7 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '                    STATEMENT_AGG(DEP.SYNONYM_STAT) SYNONYM_STATS',
 '                FROM table(package_tracer.get_Packages_List) SYN',
 '                LEFT OUTER JOIN (',
-'                    SELECT DA.Owner Object_Owner, DA.Name Object_Name,',
+'                    SELECT DISTINCT DA.Owner Object_Owner, DA.Name Object_Name,',
 '                        case when PRI.Privilege IS NULL and DA.referenced_Owner != ''PUBLIC'' then ',
 '                            ''GRANT '' || case when OBJ.OBJECT_TYPE IN (''TABLE'', ''VIEW'') then ''SELECT'' else ''EXECUTE'' end ',
 '                            || '' ON '' || DA.referenced_Owner || ''.'' || DA.referenced_Name ',
@@ -13341,10 +13341,10 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '                        AND DB.TYPE IN (''SYNONYM'', ''VIEW'')',
 '                    ) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER',
 '                    LEFT OUTER JOIN SYS.ALL_OBJECTS OBJ ON OBJ.OWNER = DA.OWNER and OBJ.OBJECT_NAME = DA.REFERENCED_NAME',
-'                    WHERE (SYN.OWNER IS NULL or Pri.Privilege IS NULL)',
-'                    AND NOT(DA.referenced_Owner = ''SYS'' AND DA.referenced_Name = ''STANDARD'')',
+'                    WHERE (SYN.OWNER IS NULL OR PRI.PRIVILEGE IS NULL)',
+'                    AND NOT(DA.REFERENCED_OWNER = ''SYS'' AND DA.REFERENCED_NAME = ''STANDARD'')',
 '                ) DEP ON DEP.Object_Owner = SYN.PACKAGE_OWNER AND DEP.Object_Name = SYN.PACKAGE_NAME',
-'                GROUP BY Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME',
+'                GROUP BY SYN.SYNONYM_NAME, SYN.PACKAGE_OWNER, SYN.PACKAGE_NAME',
 '            ), CONFLICTING_Q AS (',
 '					-- package defines types that are used for arguments in other packages',
 '				select A.OWNER, A.TYPE_NAME, ',
@@ -13439,7 +13439,7 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '                    STATEMENT_AGG(DEP.SYNONYM_STAT) SYNONYM_STATS',
 '                FROM table(get_APEX_Packages_List) SYN',
 '                LEFT OUTER JOIN (',
-'                    SELECT DA.Owner Object_Owner, DA.Name Object_Name,',
+'                    SELECT DISTINCT DA.Owner Object_Owner, DA.Name Object_Name,',
 '                        case when PRI.Privilege IS NULL and DA.referenced_Owner != ''PUBLIC'' then ',
 '                            ''GRANT '' || case when OBJ.OBJECT_TYPE IN (''TABLE'', ''VIEW'') then ''SELECT'' else ''EXECUTE'' end ',
 '                            || '' ON '' || DA.referenced_Owner || ''.'' || DA.referenced_Name ',
@@ -13465,7 +13465,7 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '                        ON Pri.table_Schema = DA.referenced_Owner ',
 '                        AND Pri.table_Name = DA.referenced_Name',
 '                        AND Pri.type = DA.referenced_Type',
-'                  '))
+''))
 );
 end;
 /
@@ -13473,13 +13473,14 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(261939746109436819)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'      AND PRI.Grantee IN (v_Dest_Schema, ''PUBLIC'')',
+'                        AND PRI.Grantee IN (v_Dest_Schema, ''PUBLIC'')',
 '                        AND PRI.privilege IN (''EXECUTE'', ''SELECT'')',
 '                    LEFT OUTER JOIN ( -- no VIEW OR SYNONYM with this name already exists',
 '                        SELECT DB.REFERENCED_NAME, DB.REFERENCED_OWNER',
 '                        FROM SYS.ALL_DEPENDENCIES DB',
 '                        WHERE DB.OWNER = v_Dest_Schema',
 '                        AND DB.NAME = DB.REFERENCED_NAME',
+'                        AND DB.TYPE IN (''SYNONYM'', ''VIEW'')',
 '                    ) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER',
 '                    LEFT OUTER JOIN SYS.ALL_OBJECTS OBJ ON OBJ.OWNER = DA.OWNER and OBJ.OBJECT_NAME = DA.REFERENCED_NAME',
 '                    WHERE (SYN.OWNER IS NULL OR PRI.PRIVILEGE IS NULL)',
@@ -13496,7 +13497,7 @@ wwv_flow_api.append_to_install_script(
 '					where A.TYPE_OBJECT_TYPE = ''PACKAGE''',
 '					and A.DATA_TYPE IN (''PL/SQL TABLE'', ''PL/SQL RECORD'', ''TABLE'')',
 '					and not(A.TYPE_OWNER = A.OWNER',
-'						and A.TYPE_NAME != A.PACKAGE_NAME)',
+'						and A.TYPE_NAME = A.PACKAGE_NAME)',
 '				/*	union -- produces false prositives for function default values',
 '					select DA.REFERENCED_OWNER OWNER, DA.REFERENCED_NAME TYPE_NAME, DA.NAME PACKAGE_NAME',
 '					from SYS.All_Dependencies DA',
@@ -14046,8 +14047,7 @@ wwv_flow_api.append_to_install_script(
 '                || rpad('' '', p_Indent+4)',
 '                || ''EXECUTE IMMEDIATE api_trace.Dyn_Log_Exit''',
 '                || case when OVERLOAD is not null then ''(p_overload => '' || OVERLOAD || '')'' end',
-'                || case when PARAM_LIST_OUT IS NOT NULL then ',
-'                    c'))
+'       '))
 );
 null;
 end;
@@ -14056,7 +14056,8 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(261939746109436819)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'hr(10) ',
+'         || case when PARAM_LIST_OUT IS NOT NULL then ',
+'                    chr(10) ',
 '                    || rpad('' '', p_Indent+4)',
 '                    || ''USING ''',
 '                    || PARAM_LIST_OUT',
@@ -14705,9 +14706,7 @@ wwv_flow_api.append_to_install_script(
 '                    AND PRO.PROCEDURE_NAME = RD.PROCEDURE_NAME',
 '                    AND PRO.SUBPROGRAM_ID = RD.SUBPROGRAM_ID',
 '            LEFT OUTER JOIN ARGUMENTS_Q ARG ',
-'                    ON PRO.OBJECT_NAME = ARG.PACKAGE_NAME',
-'                    AND PRO.OWNER = ARG.OWNER',
-' '))
+'                    ON PRO.OB'))
 );
 null;
 end;
@@ -14716,7 +14715,9 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(261939746109436819)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'                   AND PRO.PROCEDURE_NAME = ARG.PROCEDURE_NAME',
+'JECT_NAME = ARG.PACKAGE_NAME',
+'                    AND PRO.OWNER = ARG.OWNER',
+'                    AND PRO.PROCEDURE_NAME = ARG.PROCEDURE_NAME',
 '                    AND PRO.SUBPROGRAM_ID = ARG.SUBPROGRAM_ID',
 '            WHERE PRO.OBJECT_NAME = p_Object_Name',
 '            AND PRO.OWNER = p_Object_Owner',
@@ -15284,8 +15285,7 @@ wwv_flow_api.append_to_install_script(
 '        -- eventually, recreate local synonym.',
 '        if v_Synonym_Text IS NOT NULL AND INSTR(v_Synonym_Text, ''PUBLIC'') != 1 then ',
 '            v_Synonym_Text := ''CREATE '' || v_Synonym_Text;',
-'            if p_Use_Dbms_Output then',
-'                DBMS_OUTPUT.PUT_LINE (v_Synonym_Text||'';'))
+'            if p_U'))
 );
 null;
 end;
@@ -15294,7 +15294,8 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(261939746109436819)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-''');',
+'se_Dbms_Output then',
+'                DBMS_OUTPUT.PUT_LINE (v_Synonym_Text||'';'');',
 '            end if;',
 '            if p_Do_Execute then',
 '                EXECUTE IMMEDIATE v_Synonym_Text;',

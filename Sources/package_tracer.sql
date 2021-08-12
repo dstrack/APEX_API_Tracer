@@ -540,7 +540,7 @@ IS
                     STATEMENT_AGG(DEP.SYNONYM_STAT) SYNONYM_STATS
                 FROM table(package_tracer.get_Packages_List) SYN
                 LEFT OUTER JOIN (
-                    SELECT DA.Owner Object_Owner, DA.Name Object_Name,
+                    SELECT DISTINCT DA.Owner Object_Owner, DA.Name Object_Name,
                         case when PRI.Privilege IS NULL and DA.referenced_Owner != 'PUBLIC' then 
                             'GRANT ' || case when OBJ.OBJECT_TYPE IN ('TABLE', 'VIEW') then 'SELECT' else 'EXECUTE' end 
                             || ' ON ' || DA.referenced_Owner || '.' || DA.referenced_Name 
@@ -576,10 +576,10 @@ IS
                         AND DB.TYPE IN ('SYNONYM', 'VIEW')
                     ) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER
                     LEFT OUTER JOIN SYS.ALL_OBJECTS OBJ ON OBJ.OWNER = DA.OWNER and OBJ.OBJECT_NAME = DA.REFERENCED_NAME
-                    WHERE (SYN.OWNER IS NULL or Pri.Privilege IS NULL)
-                    AND NOT(DA.referenced_Owner = 'SYS' AND DA.referenced_Name = 'STANDARD')
+                    WHERE (SYN.OWNER IS NULL OR PRI.PRIVILEGE IS NULL)
+                    AND NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME = 'STANDARD')
                 ) DEP ON DEP.Object_Owner = SYN.PACKAGE_OWNER AND DEP.Object_Name = SYN.PACKAGE_NAME
-                GROUP BY Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME
+                GROUP BY SYN.SYNONYM_NAME, SYN.PACKAGE_OWNER, SYN.PACKAGE_NAME
             ), CONFLICTING_Q AS (
 					-- package defines types that are used for arguments in other packages
 				select A.OWNER, A.TYPE_NAME, 
@@ -674,7 +674,7 @@ IS
                     STATEMENT_AGG(DEP.SYNONYM_STAT) SYNONYM_STATS
                 FROM table(get_APEX_Packages_List) SYN
                 LEFT OUTER JOIN (
-                    SELECT DA.Owner Object_Owner, DA.Name Object_Name,
+                    SELECT DISTINCT DA.Owner Object_Owner, DA.Name Object_Name,
                         case when PRI.Privilege IS NULL and DA.referenced_Owner != 'PUBLIC' then 
                             'GRANT ' || case when OBJ.OBJECT_TYPE IN ('TABLE', 'VIEW') then 'SELECT' else 'EXECUTE' end 
                             || ' ON ' || DA.referenced_Owner || '.' || DA.referenced_Name 
@@ -707,6 +707,7 @@ IS
                         FROM SYS.ALL_DEPENDENCIES DB
                         WHERE DB.OWNER = v_Dest_Schema
                         AND DB.NAME = DB.REFERENCED_NAME
+                        AND DB.TYPE IN ('SYNONYM', 'VIEW')
                     ) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER
                     LEFT OUTER JOIN SYS.ALL_OBJECTS OBJ ON OBJ.OWNER = DA.OWNER and OBJ.OBJECT_NAME = DA.REFERENCED_NAME
                     WHERE (SYN.OWNER IS NULL OR PRI.PRIVILEGE IS NULL)
@@ -723,7 +724,7 @@ IS
 					where A.TYPE_OBJECT_TYPE = 'PACKAGE'
 					and A.DATA_TYPE IN ('PL/SQL TABLE', 'PL/SQL RECORD', 'TABLE')
 					and not(A.TYPE_OWNER = A.OWNER
-						and A.TYPE_NAME != A.PACKAGE_NAME)
+						and A.TYPE_NAME = A.PACKAGE_NAME)
 				/*	union -- produces false prositives for function default values
 					select DA.REFERENCED_OWNER OWNER, DA.REFERENCED_NAME TYPE_NAME, DA.NAME PACKAGE_NAME
 					from SYS.All_Dependencies DA
