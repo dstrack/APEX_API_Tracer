@@ -1535,7 +1535,7 @@ IS
         v_Record_Text VARCHAR2(32767);
         TYPE t_Record_Type IS TABLE OF VARCHAR2(1) INDEX BY VARCHAR2(1024);
         v_Types_List t_Record_Type :=  t_Record_Type();
-        v_Item_Pattern CONSTANT VARCHAR2(100) := '(\S+)\s+(.+?(\(\S+?\))?)(,|$)'; 
+        v_Item_Pattern CONSTANT VARCHAR2(100) := '(\S+)\s+(.+?(\(\S+?\))?)\s*(,|$)'; 
 		v_Item_Name VARCHAR2(1000);
 		v_Item_Type VARCHAR2(1000);
 		v_Index_by VARCHAR2(1000);
@@ -1572,7 +1572,7 @@ IS
 			v_Types_List(cur.Type_Name) := 'Y';
 		end loop;
 		-- parse source for all types; excluding subtypes
-		for ind in 1..100 loop
+		for ind in 1..1000 loop
 			v_Record_Type := REGEXP_SUBSTR(v_Clob, v_Types_Pattern, v_Offset, 1, 'in', 1);
 			exit when v_Record_Type IS NULL;
 			v_Types_List(lower(v_Record_Type)) := 'N';
@@ -1583,12 +1583,12 @@ IS
         end if;
 		-- record types
 		v_Offset := 1;
-		for ind in 1..100 loop
+		for ind in 1..1000 loop
 			v_Record_Type := REGEXP_SUBSTR(v_Clob, v_Record_Pattern, v_Offset, 1, 'in', 1);
 			exit when v_Record_Type IS NULL;
 			v_Record_Text := REGEXP_SUBSTR(v_Clob, v_Record_Pattern, v_Offset, 1, 'in', 2);
 			v_Offset2 := 1;
-			for ind2 in 1..100 loop
+			for ind2 in 1..1000 loop
 				v_Item_Name := REGEXP_SUBSTR(v_Record_Text, v_Item_Pattern, v_Offset2, 1, 'im', 1);
 				exit when v_Item_Name IS NULL;
 				v_Item_Name := SUBSTR(v_Item_Name, 1, 512);
@@ -1613,7 +1613,7 @@ IS
 
         -- table types
 		v_Offset := 1;
-		for ind in 1..100 loop
+		for ind in 1..1000 loop
 			v_Record_Type := REGEXP_SUBSTR(v_Clob, v_Table_Pattern, v_Offset, 1, 'in', 1);
 			exit when v_Record_Type IS NULL;
 			v_Item_Type := REGEXP_SUBSTR(v_Clob, v_Table_Pattern, v_Offset, 1, 'in', 2);
@@ -1632,7 +1632,7 @@ IS
 		end loop;
 		-- pl/sql table types
 		v_Offset := 1;
-		for ind in 1..100 loop
+		for ind in 1..1000 loop
 			v_Record_Type := REGEXP_SUBSTR(v_Clob, v_PL_Table_Pattern,  v_Offset, 1, 'in', 1);
 			exit when v_Record_Type IS NULL;
 			v_Item_Type := REGEXP_SUBSTR(v_Clob, v_PL_Table_Pattern,  v_Offset, 1, 'in', 2);
@@ -1690,16 +1690,15 @@ IS
     IS 
         v_Record_Text VARCHAR2(32767);
         v_pattern CONSTANT VARCHAR2(100) := 'TYPE\s+'||p_Type_Subname||'\s+IS\s+RECORD\s*\((.+?)\);';
-        v_Item_Pattern CONSTANT VARCHAR2(100) := '(\S+)\s+(.+?(\(\S+?\))?)(,|$)'; 
+        v_Item_Pattern CONSTANT VARCHAR2(100) := '(\S+)\s+(.+?(\(\S+?\))?)\s*(,|$)'; 
         v_Offset2 PLS_INTEGER;
 		v_Item_Name VARCHAR2(32767);
 		v_Result VARCHAR2(32767);
     BEGIN 
         v_Record_Text := REGEXP_SUBSTR(p_Package_Head, v_pattern, 1, 1, 'in', 1);
 		v_Offset2 := 1;
-		for ind in 1..200 loop
+		for ind in 1..1000 loop
 			v_Item_Name := REGEXP_SUBSTR(v_Record_Text, v_Item_Pattern, v_Offset2, 1, 'im', 1);
-			-- v_Item_Name := REGEXP_SUBSTR(v_Record_Text, '^\s*(\S+)', 1, ind, 'im', 1);
 			exit when v_Item_Name IS NULL;
 			v_Result := v_Result 
 			|| case when ind > 1 then ',' end
