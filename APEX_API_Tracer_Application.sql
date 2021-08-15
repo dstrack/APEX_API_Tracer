@@ -27,7 +27,7 @@ prompt APPLICATION 103 - APEX API Tracer
 -- Application Export:
 --   Application:     103
 --   Name:            APEX API Tracer
---   Date and Time:   23:20 Sunday August 15, 2021
+--   Date and Time:   23:59 Sunday August 15, 2021
 --   Exported By:     DIRK
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -118,7 +118,7 @@ wwv_flow_api.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'APEX API Tracer'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210815231447'
+,p_last_upd_yyyymmddhh24miss=>'20210815235634'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>9
 ,p_ui_type_name => null
@@ -12105,7 +12105,7 @@ wwv_flow_api.create_page(
 ,p_autocomplete_on_off=>'OFF'
 ,p_page_template_options=>'#DEFAULT#:ui-dialog--stretch'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210815174030'
+,p_last_upd_yyyymmddhh24miss=>'20210815235634'
 );
 wwv_flow_api.create_page_plug(
  p_id=>wwv_flow_api.id(263065749850062008)
@@ -12131,7 +12131,7 @@ wwv_flow_api.create_page_plug(
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
 'select ',
 '    T.Package_Owner, T.Package_Name, ',
-'    T.Type_Name, T.Item_Name, T.Item_Type, T.Index_By, T.Nested_Table, T.Table_Type, T.Type_Object_Type',
+'    T.Type_Name, T.Item_Name, T.Item_Type, T.Item_Sequence, T.Index_By, T.Nested_Table, T.Table_Type, T.Type_Object_Type',
 'from MV_PACKAGE_RECORD_TYPES T',
 ''))
 ,p_plug_source_type=>'NATIVE_IR'
@@ -12259,6 +12259,15 @@ wwv_flow_api.create_worksheet_column(
 ,p_column_label=>'Type Object Type'
 ,p_column_type=>'STRING'
 );
+wwv_flow_api.create_worksheet_column(
+ p_id=>wwv_flow_api.id(263069173642062042)
+,p_db_column_name=>'ITEM_SEQUENCE'
+,p_display_order=>120
+,p_column_identifier=>'L'
+,p_column_label=>'Item Sequence'
+,p_column_type=>'NUMBER'
+,p_column_alignment=>'RIGHT'
+);
 wwv_flow_api.create_worksheet_rpt(
  p_id=>wwv_flow_api.id(263492976998739346)
 ,p_application_user=>'APXWS_DEFAULT'
@@ -12266,7 +12275,7 @@ wwv_flow_api.create_worksheet_rpt(
 ,p_report_alias=>'2634930'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'PACKAGE_OWNER:PACKAGE_NAME:TYPE_NAME:ITEM_NAME:ITEM_TYPE:NESTED_TABLE:TABLE_TYPE:INDEX_BY:TYPE_OBJECT_TYPE'
+,p_report_columns=>'PACKAGE_OWNER:PACKAGE_NAME:TYPE_NAME:ITEM_NAME:ITEM_TYPE:ITEM_SEQUENCE:INDEX_BY:NESTED_TABLE:TABLE_TYPE:TYPE_OBJECT_TYPE:'
 );
 wwv_flow_api.create_page_plug(
  p_id=>wwv_flow_api.id(263404003221861777)
@@ -12277,8 +12286,8 @@ wwv_flow_api.create_page_plug(
 ,p_plug_display_point=>'BODY'
 ,p_query_type=>'SQL'
 ,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'select ',
-'    T.Type_Name, T.Item_Name, T.Item_Type, T.Index_By, T.Nested_Table, T.Table_Type, T.Type_Object_Type',
+'select A.Package_Owner, A.Package_Name,',
+'    T.Type_Name, T.Item_Name, T.Item_Type, T.Item_Sequence, T.Index_By, T.Nested_Table, T.Table_Type, T.Type_Object_Type',
 'from (        ',
 '    select distinct',
 '        SYN.TABLE_OWNER     Package_Owner,',
@@ -12374,6 +12383,31 @@ wwv_flow_api.create_worksheet_column(
 ,p_column_label=>'Type Object Type'
 ,p_column_type=>'STRING'
 );
+wwv_flow_api.create_worksheet_column(
+ p_id=>wwv_flow_api.id(263068886342062039)
+,p_db_column_name=>'PACKAGE_OWNER'
+,p_display_order=>39
+,p_column_identifier=>'L'
+,p_column_label=>'Package Owner'
+,p_column_type=>'STRING'
+);
+wwv_flow_api.create_worksheet_column(
+ p_id=>wwv_flow_api.id(263068913048062040)
+,p_db_column_name=>'PACKAGE_NAME'
+,p_display_order=>49
+,p_column_identifier=>'M'
+,p_column_label=>'Package Name'
+,p_column_type=>'STRING'
+);
+wwv_flow_api.create_worksheet_column(
+ p_id=>wwv_flow_api.id(263069097855062041)
+,p_db_column_name=>'ITEM_SEQUENCE'
+,p_display_order=>59
+,p_column_identifier=>'N'
+,p_column_label=>'Item Sequence'
+,p_column_type=>'NUMBER'
+,p_column_alignment=>'RIGHT'
+);
 wwv_flow_api.create_worksheet_rpt(
  p_id=>wwv_flow_api.id(263415449905126958)
 ,p_application_user=>'APXWS_DEFAULT'
@@ -12381,7 +12415,7 @@ wwv_flow_api.create_worksheet_rpt(
 ,p_report_alias=>'2634155'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'TYPE_NAME:ITEM_NAME:ITEM_TYPE:NESTED_TABLE:TABLE_TYPE:INDEX_BY:TYPE_OBJECT_TYPE'
+,p_report_columns=>'PACKAGE_OWNER:PACKAGE_NAME:TYPE_NAME:ITEM_NAME:ITEM_TYPE:ITEM_SEQUENCE:INDEX_BY:NESTED_TABLE:TABLE_TYPE:TYPE_OBJECT_TYPE:'
 );
 wwv_flow_api.create_page_item(
  p_id=>wwv_flow_api.id(263067205298062023)
