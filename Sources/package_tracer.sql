@@ -141,6 +141,8 @@ IS
     c_APEX_Condition_End       CONSTANT VARCHAR2(1000) := 'end if;';
     c_Package_Name             CONSTANT VARCHAR2(128) := lower($$plsql_unit);
     g_debug                    CONSTANT BOOLEAN := FALSE;
+    g_Exclude_Nested_Tables    CONSTANT BOOLEAN := TRUE;
+    g_Use_Plscope_Settings     CONSTANT BOOLEAN := TRUE;
     
     TYPE rec_logging_calls IS RECORD (
         Package_Name    SYS.ALL_ARGUMENTS.PACKAGE_NAME%TYPE, 
@@ -185,7 +187,8 @@ IS
         Grant_Stats     CLOB,
         Revoke_Stats    CLOB,
         Synonym_Stats   CLOB,
-        conflicting_objects VARCHAR2(32767),
+        Affected_Objects VARCHAR2(32767),
+        Global_Variables_Count NUMBER,
         Error_Count     NUMBER
     );
     TYPE tab_Packages_Control IS TABLE OF rec_Packages_Control;
@@ -294,7 +297,8 @@ IS
     	Item_Sequence	INTEGER,
     	Index_by		VARCHAR2(128 BYTE),
     	Nested_Table	VARCHAR2(1 BYTE),
-    	Table_Type 		VARCHAR2(20 BYTE)
+    	Table_Type 		VARCHAR2(20 BYTE),
+    	Type_Object_Type VARCHAR2(20 BYTE) -- PACKAGE, TYPE, TABLE
     );
     TYPE tab_record_fields IS TABLE OF rec_record_fields;
     -- list record and table types of a package
@@ -312,6 +316,8 @@ IS
     FUNCTION Get_Record_Fields (
         p_Package_Name IN VARCHAR2,
         p_Package_Owner IN VARCHAR2,
+        p_Type_Name IN VARCHAR2,
+        p_Type_Owner IN VARCHAR2, 
         p_Type_Subname IN VARCHAR2,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_temp',
         p_Owner IN VARCHAR2 DEFAULT NULL
@@ -390,7 +396,8 @@ END;
 
 CREATE MATERIALIZED VIEW MV_PACKAGE_RECORD_TYPES (
 	Package_Owner, Package_Name,
-	Type_Name, Item_Name, Item_Type, Item_Sequence, Index_By, Nested_Table, Table_Type
+	Type_Name, Item_Name, Item_Type, Item_Sequence, Index_By, 
+	Nested_Table, Table_Type, Type_Object_Type
 )
 	NOLOGGING
 	BUILD DEFERRED
@@ -402,7 +409,7 @@ SELECT
     UPPER(T.Type_Name) Type_Name, 
     T.Item_Name, 
     UPPER(T.Item_Type) Item_Type, 
-    T.Item_Sequence, T.Index_By, T.Nested_Table, T.Table_Type
+    T.Item_Sequence, T.Index_By, T.Nested_Table, T.Table_Type, T.Type_Object_Type
 FROM (        
     select distinct
         SYN.TABLE_OWNER     Package_Owner,
@@ -418,6 +425,7 @@ CREATE INDEX MV_PACKAGE_RECORD_TYPES_IND1 ON MV_PACKAGE_RECORD_TYPES(Package_Own
 
 COMMENT ON MATERIALIZED VIEW MV_PACKAGE_RECORD_TYPES IS 'Package Record and pls/table definitions for package_tracer';
 
+------------------------------------------------------------------------------------------
 CREATE OR REPLACE PACKAGE BODY package_tracer
 IS
     c_Quote CONSTANT VARCHAR2(1) := chr(39);    -- Quote Character
@@ -516,14 +524,16 @@ IS
             where Syn.OWNER IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') )
             and SYN.SYNONYM_NAME LIKE p_Search_Name
             and OBJ.OBJECT_TYPE = 'PACKAGE'
-			and NOT EXISTS ( -- package defines no nested record types for function arguments and return values 
+$IF package_tracer.g_Exclude_Nested_Tables $THEN
+			and NOT EXISTS ( -- package is defining nested record types for function arguments or return values 
 				select 1 
 				from MV_PACKAGE_RECORD_TYPES A
 				where A.PACKAGE_NAME = SYN.TABLE_NAME
 				and A.PACKAGE_OWNER = SYN.TABLE_OWNER
 				and A.Nested_Table = 'Y' 
-            )
-            and NOT EXISTS (
+            )           
+$END
+			and NOT EXISTS (
             	select * from SYS.ALL_ARGUMENTS A
 				where A.data_type IN ('UNDEFINED')
 				and A.PACKAGE_NAME = SYN.TABLE_NAME
@@ -551,13 +561,14 @@ IS
                 	'DBMS_UTILITY','DBMS_STATS','DBMS_STAT_FUNCS','DBMS_DEBUG','DBMS_TF',
                 	'DBMS_DATA_MINING_TRANSFORM','DBMS_HS_PARALLEL','OWA_COOKIE','OWA_TEXT' )
             )
-            and not (SYN.TABLE_OWNER LIKE 'APEX%' -- package defines nested record types for function arguments
+/*            and not (SYN.TABLE_OWNER LIKE 'APEX%' -- package defines nested record types for function arguments
             	and SYN.TABLE_NAME IN (
             		'WWV_FLOW_EXEC_API','WWV_FLOW_PLUGIN_API','WWV_FLOW_PLUGIN_UTIL','WWV_FLOW_WORKSPACE_USER_API',
             		'WWV_FLOW_JSON', 'WWV_FLOW_DATA_PARSER' )
             )
-            and SYN.SYNONYM_NAME NOT IN (
+*/            and SYN.SYNONYM_NAME NOT IN (
             	'API_TRACE',				-- because package_tracer is dependent on this object
+            	'DBMS_OUTPUT',				-- because package_tracer is dependent on this object
             	'PACKAGE_TRACER',			-- because package_tracer is dependent on this object
             	'APEX_DEBUG', 				-- because package_tracer is dependent on this synonyms
             	'APEX_APPLICATION',			-- because global variables are defined
@@ -646,7 +657,7 @@ IS
              ), CONFLICTING_Q AS (
 					-- package defines types that are used for arguments in other packages
 				select A.OWNER, A.TYPE_NAME, 
-					LISTAGG(A.PACKAGE_NAME, ', ') WITHIN GROUP (ORDER BY A.PACKAGE_NAME) CONFLICTING_OBJECTS
+					LISTAGG(A.PACKAGE_NAME, ', ') WITHIN GROUP (ORDER BY A.PACKAGE_NAME) AFFECTED_OBJECTS
 				from (  -- record types are used in Dependent packages for arguments
 					select distinct A.OWNER, A.TYPE_NAME, A.PACKAGE_NAME 
 					from SYS.ALL_ARGUMENTS A
@@ -678,8 +689,22 @@ IS
                 GRANT_STATS,
                 REVOKE_STATS, 
                 SYNONYM_STATS,
-                CONFLICTING_OBJECTS,
-                ERROR_COUNT
+                AFFECTED_OBJECTS,
+				(SELECT COUNT(*)
+					from ALL_IDENTIFIERS AI
+					where not(AI.owner = 'SYS' and AI.object_name in ('STANDARD','DBMS_STANDARD'))
+					and AI.Object_Type = 'PACKAGE'
+					and AI.Usage = 'DECLARATION'
+					and AI.Type = 'VARIABLE'
+					and AI.owner = p_Dest_Schema
+					and AI.object_name = MAIN.SYNONYM_NAME
+				) Global_Variables_Count,
+				(SELECT COUNT(*) 
+				 FROM SYS.ALL_ERRORS ERR
+				 WHERE ERR.NAME = MAIN.SYNONYM_NAME
+				 AND ERR.OWNER = p_Dest_Schema
+				 AND ERR.TYPE LIKE 'PACKAGE%'
+				) ERROR_COUNT
             FROM (
                 SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME,
                     CASE WHEN EXISTS (
@@ -688,25 +713,13 @@ IS
                         WHERE OBJ.OBJECT_NAME = D.SYNONYM_NAME
                         AND OBJECT_TYPE = 'PACKAGE'
                     ) THEN 'Y' ELSE 'N' END IS_ENABLED,
-                    GRANT_STATS, REVOKE_STATS, SYNONYM_STATS,
-                    (SELECT COUNT(*) 
-                     FROM SYS.ALL_ERRORS ERR
-                     WHERE ERR.NAME = D.SYNONYM_NAME
-                     AND ERR.OWNER = p_Dest_Schema
-                     AND ERR.TYPE LIKE 'PACKAGE%'
-                    ) ERROR_COUNT
+                    GRANT_STATS, REVOKE_STATS, SYNONYM_STATS
                 FROM DEPS D
                 UNION ALL -- enabled local synonym packages
                 SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME, 'Y' IS_ENABLED,
                     TO_CLOB(NULL) GRANT_STATS, 
                     TO_CLOB(NULL) REVOKE_STATS, 
-                    TO_CLOB('CREATE OR REPLACE ' || SYNONYM_STATS || ';') SYNONYM_STATS,
-                    (SELECT COUNT(*) 
-                     FROM SYS.ALL_ERRORS ERR
-                     WHERE ERR.NAME = D.SYNONYM_NAME
-                     AND ERR.OWNER = p_Dest_Schema
-                     AND ERR.TYPE LIKE 'PACKAGE%'
-                    ) ERROR_COUNT
+                    TO_CLOB('CREATE OR REPLACE ' || SYNONYM_STATS || ';') SYNONYM_STATS
                 FROM (
                     SELECT DEP.NAME SYNONYM_NAME, 
                             DEP.REFERENCED_NAME PACKAGE_NAME,
@@ -793,7 +806,7 @@ IS
             ), CONFLICTING_Q AS (
 					-- package defines types that are used for arguments in other packages
 				select A.OWNER, A.TYPE_NAME,
-					LISTAGG(A.PACKAGE_NAME, ', ') WITHIN GROUP (ORDER BY A.PACKAGE_NAME) CONFLICTING_OBJECTS
+					LISTAGG(A.PACKAGE_NAME, ', ') WITHIN GROUP (ORDER BY A.PACKAGE_NAME) AFFECTED_OBJECTS
 				from ( -- record types are used in Dependent packages for arguments
 					select distinct A.OWNER, A.TYPE_NAME, A.PACKAGE_NAME 
 					from SYS.ALL_ARGUMENTS A
@@ -823,7 +836,16 @@ IS
                 || APEX_ITEM.HIDDEN (p_idx => 3, p_value => IS_ENABLED, p_item_id => 'f03_' || ROWNUM , p_item_label => 'IS_ENABLED') IS_ENABLED_SWITCH,
                 IS_ENABLED,
                 GRANT_STATS, REVOKE_STATS, SYNONYM_STATS,
-                CONFLICTING_OBJECTS,                
+                AFFECTED_OBJECTS,                
+				(SELECT COUNT(*)
+					from ALL_IDENTIFIERS AI
+					where not(AI.owner = 'SYS' and AI.object_name in ('STANDARD','DBMS_STANDARD'))
+					and AI.Object_Type = 'PACKAGE'
+					and AI.Usage = 'DECLARATION'
+					and AI.Type = 'VARIABLE'
+					and AI.owner = v_Dest_Schema
+					and AI.object_name = MAIN.SYNONYM_NAME
+				) Global_Variables_Count,
 				(SELECT COUNT(*) 
 				 FROM SYS.ALL_ERRORS ERR
 				 WHERE ERR.NAME = MAIN.SYNONYM_NAME
@@ -832,7 +854,7 @@ IS
 				) ERROR_COUNT
             FROM (
                 SELECT PL.SYNONYM_NAME, PL.PACKAGE_OWNER, PL.PACKAGE_NAME,
-                    P.GRANT_STATS, P.REVOKE_STATS, S.SYNONYM_STATS, CF.CONFLICTING_OBJECTS,
+                    P.GRANT_STATS, P.REVOKE_STATS, S.SYNONYM_STATS, CF.AFFECTED_OBJECTS,
                     CASE WHEN EXISTS (
                         SELECT 1 
                         FROM SYS.USER_OBJECTS OBJ
@@ -1621,6 +1643,8 @@ IS
         v_Record_Text VARCHAR2(32767);
         TYPE t_Record_Type IS TABLE OF VARCHAR2(1) INDEX BY VARCHAR2(1024);
         v_Types_List t_Record_Type :=  t_Record_Type();
+        TYPE t_Type_Object_Type IS TABLE OF VARCHAR2(20) INDEX BY VARCHAR2(1024);
+        v_Object_Type_List t_Type_Object_Type :=  t_Type_Object_Type();
         v_Item_Pattern CONSTANT VARCHAR2(100) := '(\S+)\s+(.+?(\(\S+?\))?)\s*(,|$)'; 
 		v_Item_Name VARCHAR2(1000);
 		v_Item_Type VARCHAR2(1000);
@@ -1652,12 +1676,14 @@ IS
 			and DA.referenced_Type = 'TYPE'
 		) loop 
 			v_Types_List(cur.Type_Name) := 'Y';
+			v_Object_Type_List(cur.Type_Name) := 'TYPE';
 		end loop;
 		-- parse source for all types; excluding subtypes
 		for ind in 1..1000 loop
 			v_Record_Type := REGEXP_SUBSTR(v_Clob, v_Types_Pattern, v_Offset, 1, 'in', 1);
 			exit when v_Record_Type IS NULL;
 			v_Types_List(lower(v_Record_Type)) := 'N';
+			v_Object_Type_List(lower(v_Record_Type)) := 'PACKAGE';
 			v_Offset := REGEXP_INSTR(v_Clob, v_Types_Pattern, v_Offset, 1, 1, 'in');
 		end loop;
         if g_debug then
@@ -1686,10 +1712,17 @@ IS
 				v_out_row.Item_Sequence := v_Item_Sequence;
 				v_out_row.Index_by  := null;
 				v_out_row.Table_Type := 'RECORD';
-				if v_Types_List.EXISTS(lower(v_Item_Type)) then 
-					v_out_row.Nested_Table := 'Y';
-					v_Types_List(lower(v_Record_Type)) := 'Y';
+				v_Item_Type := lower(v_Item_Type);
+				if v_Types_List.EXISTS(v_Item_Type) then 
+					v_out_row.Type_Object_Type := v_Object_Type_List(v_Item_Type);
+					if v_out_row.Type_Object_Type = 'TYPE' then
+						v_out_row.Nested_Table := 'N';				
+					else 
+						v_out_row.Nested_Table := 'Y';
+						v_Types_List(lower(v_Record_Type)) := 'Y';
+					end if;
 				else 
+					v_out_row.Type_Object_Type := 'PACKAGE';
 					v_out_row.Nested_Table := 'N';
 				end if;
 				PIPE ROW(v_out_row);
@@ -1707,6 +1740,7 @@ IS
 		for ind in 1..1000 loop
 			v_Record_Type := REGEXP_SUBSTR(v_Clob, v_Table_Pattern, v_Offset, 1, 'in', 1);
 			exit when v_Record_Type IS NULL;
+			v_Types_List(lower(v_Record_Type)) := 'Y';
 			v_Item_Type := REGEXP_SUBSTR(v_Clob, v_Table_Pattern, v_Offset, 1, 'in', 2);
 			v_out_row.Type_name	:= v_Record_Type;
 			v_out_row.Item_Name	:= null;
@@ -1714,9 +1748,12 @@ IS
 			v_out_row.Item_Sequence := 1;
 			v_out_row.Index_by  := null;
 			v_out_row.Table_Type := 'TABLE';
-			if v_Types_List.EXISTS(lower(v_Item_Type)) then 
-				v_out_row.Nested_Table := v_Types_List(lower(v_Item_Type));
+			v_Item_Type := lower(v_Item_Type);
+			if v_Types_List.EXISTS(v_Item_Type) then 
+				v_out_row.Type_Object_Type := v_Object_Type_List(v_Item_Type);
+				v_out_row.Nested_Table := v_Types_List(v_Item_Type);
 			else 
+				v_out_row.Type_Object_Type := 'PACKAGE';
 				v_out_row.Nested_Table := 'N';
 			end if;
 			PIPE ROW(v_out_row);
@@ -1730,6 +1767,7 @@ IS
 		for ind in 1..1000 loop
 			v_Record_Type := REGEXP_SUBSTR(v_Clob, v_PL_Table_Pattern,  v_Offset, 1, 'in', 1);
 			exit when v_Record_Type IS NULL;
+			v_Types_List(lower(v_Record_Type)) := 'Y';
 			v_Item_Type := REGEXP_SUBSTR(v_Clob, v_PL_Table_Pattern,  v_Offset, 1, 'in', 2);
 			v_Index_by := REGEXP_SUBSTR(v_Clob, v_PL_Table_Pattern,  v_Offset, 1, 'in', 3);
 			v_out_row.Type_name	:= v_Record_Type;
@@ -1738,9 +1776,12 @@ IS
 			v_out_row.Item_Sequence := 1;
 			v_out_row.Index_by	:= v_Index_by;
 			v_out_row.Table_Type := 'PL/SQL TABLE';
-			if v_Types_List.EXISTS(lower(v_Item_Type)) then 
-				v_out_row.Nested_Table := v_Types_List(lower(v_Item_Type));
+			v_Item_Type := lower(v_Item_Type);
+			if v_Types_List.EXISTS(v_Item_Type) then 
+				v_out_row.Type_Object_Type := v_Object_Type_List(v_Item_Type);
+				v_out_row.Nested_Table := v_Types_List(v_Item_Type);
 			else 
+				v_out_row.Type_Object_Type := 'PACKAGE';
 				v_out_row.Nested_Table := 'N';
 			end if;
 			PIPE ROW(v_out_row);
@@ -1781,6 +1822,8 @@ IS
     FUNCTION Get_Record_Fields (
         p_Package_Name IN VARCHAR2,
         p_Package_Owner IN VARCHAR2,
+        p_Type_Name IN VARCHAR2,
+        p_Type_Owner IN VARCHAR2, 
         p_Type_Subname IN VARCHAR2,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_temp',
         p_Owner IN VARCHAR2 DEFAULT NULL
@@ -1791,15 +1834,15 @@ IS
 		for cur in (
 			select DISTINCT S.Item_Name, S.Item_Sequence, S.Item_Type, S.Table_Type,
 				T.TABLE_TYPE TYPE_ITEM_TYPE,
-				T.Package_Name, 
-				UPPER(T.Type_Name) SUB_Type_Name
+				T.Package_Name, T.Package_Owner,
+				T.Type_Name SUB_Type_Name
 			from MV_PACKAGE_RECORD_TYPES S 
 			left outer join MV_PACKAGE_RECORD_TYPES T 
 				on (S.Item_type = T.Package_Name||'.' ||T.Type_Name
 					or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name)
 				and S.Package_Owner = T.Package_Owner
-			where S.Package_Name = p_Package_Name
-			and S.Package_Owner = p_Package_Owner
+			where S.Package_Name = p_Type_Name
+			and S.Package_Owner = p_Type_Owner
 			and S.Type_Name = UPPER(p_Type_Subname)
 			order by S.Item_Sequence
 		) loop
@@ -1807,11 +1850,16 @@ IS
 			and cur.SUB_Type_Name IS NOT NULL then 
 				v_Result := v_Result 
 				|| case when cur.Item_Sequence > 1 then ',' end
-				|| case when p_Owner IS NOT NULL then  p_Owner || '.' || cur.Package_Name || '.' end
+				|| case when p_Owner IS NOT NULL then p_Owner || '.' || cur.Package_Name || '.' 
+						when p_Package_Owner != cur.Package_Owner then p_Owner || '.' || cur.Package_Name || '.' 
+					    when p_Package_Name != cur.Package_Name then cur.Package_Name || '.'
+				end
 				|| cur.SUB_Type_Name 
 				|| '(' || Get_Record_Fields(
-					p_Package_Name => cur.Package_Name,
+					p_Package_Name => p_Package_Name,
 					p_Package_Owner => p_Package_Owner,
+					p_Type_Name => cur.Package_Name,
+					p_Type_Owner => cur.Package_Owner,
 					p_Type_Subname => cur.SUB_Type_Name,
 					p_Variable_Name => p_Variable_Name 
 									|| case when cur.Item_Name IS NOT NULL 
@@ -1846,33 +1894,19 @@ IS
         CURSOR all_proc_cur
         IS
             WITH TYPES_Q AS (
-            	SELECT Package_Name, Package_Owner, Type_Name, 
-            		Item_Type, Index_By, -- table row type; basic datatype or record type name
-            		Nested_Table, Table_Type,
-            		case when Record_Fields is not null then Item_Type end Record_Type, 
-            		Record_Fields
-           		FROM (
-					SELECT Package_Name, Package_Owner, Type_Name, 
-						Item_Type, Index_By, Nested_Table, Table_Type,
-						case when Nested_Table = 'Y' 
-								or (INSTR(UPPER(ITEM_TYPE),'%TYPE') = 0 -- subtype
-								and package_tracer.Is_Printable_Type(UPPER(REGEXP_REPLACE (Item_Type, '\(.+?\)'))) = 'NO' -- pls_type
-								)
-							then 
-								package_tracer.Get_Record_Fields (
-									p_Package_Name => Package_Name,
-									p_Package_Owner => Package_Owner,
-									p_Type_Subname => Item_Type,
-									p_Variable_Name => '#VAR#'
-								) 
-							/*package_tracer.Get_Record_Fields(
-									p_Package_Head=>v_Header, 
-									p_Type_Subname=>Item_Type,
-									p_Variable_Name=>'#VAR#')*/
-						end RECORD_FIELDS
-					FROM MV_PACKAGE_RECORD_TYPES 
-					WHERE Table_Type != 'RECORD'
-				)
+				SELECT S.Package_Name, S.Package_Owner, S.Type_Name, 
+					S.Item_Type, S.Index_By, S.Nested_Table, S.Table_Type,
+					case when COUNT(*) > 1 then S.Item_Type end Record_Type,
+					COUNT(*) Sub_Item_Degree
+					-- , LISTAGG(T.Item_Name, ', ') WITHIN GROUP (ORDER BY T.Item_Sequence) Sub_Items
+				FROM MV_PACKAGE_RECORD_TYPES S
+				LEFT OUTER JOIN MV_PACKAGE_RECORD_TYPES T 
+					on (S.Item_type = T.Package_Name||'.' ||T.Type_Name
+						or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name)
+					and S.Package_Owner = T.Package_Owner
+				WHERE S.Table_Type != 'RECORD' -- Important
+				GROUP BY S.Package_Name, S.Package_Owner, S.Type_Name, 
+					S.Item_Type, S.Index_By, S.Nested_Table, S.Table_Type
             ), RETURN_Q AS (
                 SELECT A.PACKAGE_NAME, A.OWNER, A.OBJECT_NAME PROCEDURE_NAME, A.SUBPROGRAM_ID, 
                         A.IN_OUT, 
@@ -1881,9 +1915,8 @@ IS
                         A.TYPE_NAME RETURN_TYPE_NAME,
                         A.TYPE_OWNER RETURN_TYPE_OWNER,
                         A.TYPE_SUBNAME RETURN_TYPE_SUBNAME,
-                        NVL(T.INDEX_BY, 'PLS_INTEGER') RETURN_IDX_TYPE,
+                        T.INDEX_BY RETURN_IDX_TYPE,
                         T.RECORD_TYPE RETURN_RECORD_TYPE,
-                        T.RECORD_FIELDS RETURN_RECORD_FIELDS,
                         A.CHAR_USED,
                         CASE when A.TYPE_NAME IS NOT NULL THEN 
                             CASE WHEN A.DATA_TYPE = 'REF' THEN ' ref ' END
@@ -1921,8 +1954,10 @@ IS
 									|| ARGUMENT_TYPE || '('
                         			|| case when DATA_TYPE = 'PL/SQL RECORD' and IN_OUT IN ('IN/OUT', 'IN') then 
 										package_tracer.Get_Record_Fields (
-											p_Package_Name => TYPE_NAME,
-											p_Package_Owner => TYPE_OWNER,
+											p_Package_Name => PACKAGE_NAME,
+											p_Package_Owner => OWNER,
+											p_Type_Name => TYPE_NAME,
+											p_Type_Owner => TYPE_OWNER,
 											p_Type_Subname => TYPE_SUBNAME,
 											p_Variable_Name => ARGUMENT_NAME,
 											p_Owner => TYPE_OWNER
@@ -1930,7 +1965,7 @@ IS
 									end
 									|| ')'
                         		end
-                        		|| case when DATA_TYPE = 'PL/SQL TABLE' and ITEM_TYPE IS NOT NULL -- and RECORD_TYPE IS NOT NULL
+                        		|| case when DATA_TYPE = 'PL/SQL TABLE' --  and ITEM_TYPE IS NOT NULL and RECORD_TYPE IS NOT NULL
                         			then ';'||chr(10)||chr(9)
                         				||'idx' || A.POSITION || ' ' || INDEX_BY
                         		end, ';'||chr(10)||chr(9)) WITHIN GROUP (ORDER BY POSITION) 
@@ -1941,23 +1976,27 @@ IS
 										'FOR idx IN 1 .. ' || ARGUMENT_NAME || '.COUNT LOOP' || chr(10)||RPAD(' ', 8)
 										|| ARG_PREFIX || ARGUMENT_NAME || '(idx) := '
 										|| package_tracer.Get_Record_Fields (
-											p_Package_Name => TYPE_NAME,
-											p_Package_Owner => TYPE_OWNER,
+											p_Package_Name => PACKAGE_NAME,
+											p_Package_Owner => OWNER,
+											p_Type_Name => TYPE_NAME,
+											p_Type_Owner => TYPE_OWNER,
 											p_Type_Subname => TYPE_SUBNAME,
 											p_Variable_Name => ARGUMENT_NAME|| '(idx)',
 											p_Owner => TYPE_OWNER
 										)
 										|| ';' || chr(10)||RPAD(' ', 4)
 										|| 'END LOOP'
-									when DATA_TYPE = 'PL/SQL TABLE' and ITEM_TYPE IS NOT NULL -- and RECORD_TYPE IS NOT NULL
+									when DATA_TYPE = 'PL/SQL TABLE' --  and ITEM_TYPE IS NOT NULL and RECORD_TYPE IS NOT NULL
 									then 
 										'idx' || A.POSITION || ' := ' || ARGUMENT_NAME || '.FIRST;' || chr(10)||RPAD(' ', 4)
 										|| 'WHILE idx' || A.POSITION || ' IS NOT NULL LOOP' || chr(10)||RPAD(' ', 8)
 										|| ARG_PREFIX || ARGUMENT_NAME || '(idx' || A.POSITION || ') := '
 										|| case when RECORD_TYPE IS NOT NULL then 
 												package_tracer.Get_Record_Fields (
-													p_Package_Name => TYPE_NAME,
-													p_Package_Owner => TYPE_OWNER,
+													p_Package_Name => PACKAGE_NAME,
+													p_Package_Owner => OWNER,
+													p_Type_Name => TYPE_NAME,
+													p_Type_Owner => TYPE_OWNER,
 													p_Type_Subname => TYPE_SUBNAME,
 													p_Variable_Name => ARGUMENT_NAME|| '(idx' || A.POSITION || ')',
 													p_Owner => TYPE_OWNER
@@ -1982,8 +2021,10 @@ IS
 										ARGUMENT_NAME || ' := '
 										|| LOWER(p_Package_Name || '.' || TYPE_SUBNAME) || '('
 										|| package_tracer.Get_Record_Fields (
-												p_Package_Name => TYPE_NAME,
-												p_Package_Owner => TYPE_OWNER,
+												p_Package_Name => PACKAGE_NAME,
+												p_Package_Owner => OWNER,
+												p_Type_Name => TYPE_NAME,
+												p_Type_Owner => TYPE_OWNER,
 												p_Type_Subname => TYPE_SUBNAME,
 												p_Variable_Name => ARG_PREFIX|| ARGUMENT_NAME
 											)
@@ -1992,22 +2033,27 @@ IS
 										'FOR idx IN 1 .. ' || ARGUMENT_NAME || '.COUNT LOOP' || chr(10)||RPAD(' ', 8)
 										|| ARGUMENT_NAME || '(idx) := '
 										|| package_tracer.Get_Record_Fields (
-											p_Package_Name => TYPE_NAME,
-											p_Package_Owner => TYPE_OWNER,
+											p_Package_Name => PACKAGE_NAME,
+											p_Package_Owner => OWNER,
+											p_Type_Name => TYPE_NAME,
+											p_Type_Owner => TYPE_OWNER,
 											p_Type_Subname => TYPE_SUBNAME,
 											p_Variable_Name => ARG_PREFIX || ARGUMENT_NAME|| '(idx)'
 										)
 										|| ';' || chr(10)||RPAD(' ', 4)
 										|| 'END LOOP'
 									
-									when DATA_TYPE = 'PL/SQL TABLE' and ITEM_TYPE IS NOT NULL AND RECORD_TYPE IS NOT NULL then 
+									when DATA_TYPE = 'PL/SQL TABLE' -- and ITEM_TYPE IS NOT NULL AND RECORD_TYPE IS NOT NULL 
+									then 
 										'idx' || A.POSITION || ' := ' || ARG_PREFIX || ARGUMENT_NAME || '.FIRST;' || chr(10)||RPAD(' ', 4)
 										|| 'WHILE idx' || A.POSITION || ' IS NOT NULL LOOP' || chr(10)||RPAD(' ', 8)
 										|| ARGUMENT_NAME || '(' || 'idx' || A.POSITION || ') := '
 										|| case when RECORD_TYPE IS NOT NULL then 
 												package_tracer.Get_Record_Fields (
-													p_Package_Name => TYPE_NAME,
-													p_Package_Owner => TYPE_OWNER,
+													p_Package_Name => PACKAGE_NAME,
+													p_Package_Owner => OWNER,
+													p_Type_Name => TYPE_NAME,
+													p_Type_Owner => TYPE_OWNER,
 													p_Type_Subname => TYPE_SUBNAME,
 													p_Variable_Name => ARG_PREFIX || ARGUMENT_NAME|| '(' || 'idx' || A.POSITION || ')'
 												)
@@ -2028,7 +2074,7 @@ IS
 					SELECT A.PACKAGE_NAME, A.OWNER, A.PROCEDURE_NAME, A.SUBPROGRAM_ID, 
 						A.ARGUMENT_NAME, A.DATA_TYPE, A.POSITION, A.TYPE_OWNER, A.TYPE_NAME, A.TYPE_SUBNAME, 
 						A.IN_OUT, A.ARGUMENT_TYPE, A.ARG_PREFIX, 
-						T.RECORD_TYPE, T.RECORD_FIELDS, T.ITEM_TYPE, T.NESTED_TABLE, T.INDEX_BY
+						T.RECORD_TYPE, T.ITEM_TYPE, T.NESTED_TABLE, T.INDEX_BY
 					FROM (SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, 
 								LOWER(ARGUMENT_NAME) ARGUMENT_NAME,
 								DATA_TYPE, POSITION, TYPE_OWNER, TYPE_NAME, TYPE_SUBNAME, IN_OUT, 
@@ -2055,7 +2101,7 @@ IS
                 RET.RETURN_TYPE, RET.TYPE_OBJECT_TYPE, 
                 RET.RETURN_TYPE_NAME, RET.RETURN_TYPE_OWNER, RET.RETURN_TYPE_SUBNAME, 
                 RET.RETURN_IDX_TYPE, 
-                RET.RETURN_RECORD_TYPE, RET.RETURN_RECORD_FIELDS,
+                RET.RETURN_RECORD_TYPE, 
                 RET.RETURN_PLS_TYPE, RET.RETURN_DATA_TYPE, RET.CHAR_USED,
                 RD.RETURN_TYPE DEST_RETURN_TYPE,
                 NVL(ARG.ARGS_COUNT,0) ARGS_COUNT,
@@ -2138,7 +2184,6 @@ IS
             LOOP
                 v_calling_subprog := v_object_owner || '.' || LOWER(p_Object_Name) || '.' || LOWER(v_proc_tbl(ind).PROCEDURE_NAME);
                 v_procedure_name := lower(p_Package_Name||'.'|| v_proc_tbl(ind).PROCEDURE_NAME);
-                -- DBMS_OUTPUT.PUT_LINE (v_calling_subprog);
                 IF p_Logging_Start_Enabled = 'Y' THEN 
                     v_trace_call := chr(9) 
                     || replace(
@@ -2261,9 +2306,15 @@ IS
 						|| 'lv_idx := lv_temp.FIRST;' || chr(10)||RPAD(' ', 4)
 						|| 'WHILE lv_idx IS NOT NULL LOOP' || chr(10)||RPAD(' ', 8)
 						|| p_Variable_Name || '(lv_idx) := '
-						|| LOWER(p_Package_Name || '.' ||v_proc_tbl(ind).RETURN_RECORD_TYPE) || '('
-						|| REPLACE(v_proc_tbl(ind).RETURN_RECORD_FIELDS, '#VAR#', 'lv_temp(lv_idx)')
-						|| ');' || chr(10)||RPAD(' ', 8)
+                        || package_tracer.Get_Record_Fields (
+                        	p_Package_Name => p_Object_Name,
+                        	p_Package_Owner => p_Object_Owner,
+							p_Type_Name => v_proc_tbl(ind).RETURN_TYPE_NAME,
+							p_Type_Owner => v_proc_tbl(ind).RETURN_TYPE_OWNER,
+							p_Type_Subname => v_proc_tbl(ind).RETURN_TYPE_SUBNAME,
+							p_Variable_Name => 'lv_temp(lv_idx)'
+						)
+						|| ';' || chr(10)||RPAD(' ', 8)
 						|| 'lv_idx := lv_temp.NEXT(lv_idx);' || chr(10)||RPAD(' ', 4)
 						|| 'END LOOP;' || chr(10)
                         || v_trace_output
@@ -2302,11 +2353,13 @@ IS
                         || '    '||p_Variable_Name||' := ' || v_proc_tbl(ind).DEST_RETURN_TYPE 
                         || '(' 
                         || package_tracer.Get_Record_Fields (
-								p_Package_Name => v_proc_tbl(ind).RETURN_TYPE_NAME,
-								p_Package_Owner => v_proc_tbl(ind).RETURN_TYPE_OWNER,
-								p_Type_Subname => v_proc_tbl(ind).RETURN_TYPE_SUBNAME,
-								p_Variable_Name => 'lv_temp'
-							)
+                        	p_Package_Name => p_Object_Name,
+                        	p_Package_Owner => p_Object_Owner,
+							p_Type_Name => v_proc_tbl(ind).RETURN_TYPE_NAME,
+							p_Type_Owner => v_proc_tbl(ind).RETURN_TYPE_OWNER,
+							p_Type_Subname => v_proc_tbl(ind).RETURN_TYPE_SUBNAME,
+							p_Variable_Name => 'lv_temp'
+						)
                         || ');'|| chr(10) 
                         || v_trace_output
                         || '    return '||p_Variable_Name||';' || chr(10);                    
@@ -2419,7 +2472,7 @@ IS
               RAISE_APPLICATION_ERROR(-20002, 'The package ' || v_Synonym_Name || ' already exists is the current schema.');
             -- option: the package is renamed and the tracing package takes it's name.
         end if;        
-
+$IF package_tracer.g_Exclude_Nested_Tables $THEN
 		select COUNT(*) into v_Count
 		from MV_PACKAGE_RECORD_TYPES A
 		where A.PACKAGE_NAME = v_Package_Name_Out
@@ -2429,7 +2482,7 @@ IS
             RAISE_APPLICATION_ERROR(-20003, 'The package ' || v_Synonym_Name || ' is defining nested record types for function arguments and can´t be traced.');
             return;
         end if;
-
+$END
 		if g_debug then
             Log_Elapsed_Time(v_Timemark, '-- Checked for table or record types');       
         end if;
@@ -2531,7 +2584,17 @@ IS
           DBMS_OUTPUT.PUT_LINE ('/');
         end if;
         if p_Do_Execute then 
-            EXECUTE IMMEDIATE v_Clob;
+        	$IF package_tracer.g_Use_Plscope_Settings $THEN
+				-- enable the collection of global variables declared in the package into ALL_IDENTIFIERS
+				EXECUTE IMMEDIATE q'[ALTER SESSION SET PLSCOPE_SETTINGS = 'IDENTIFIERS:PUBLIC, STATEMENTS:NONE']';
+				-- compile the package header
+				EXECUTE IMMEDIATE v_Clob;
+				-- disable the collection of global variables declared in the package into ALL_IDENTIFIERS
+				EXECUTE IMMEDIATE q'[ALTER SESSION SET PLSCOPE_SETTINGS = 'IDENTIFIERS:NONE']';
+			$ELSE
+				-- compile the package header
+				EXECUTE IMMEDIATE v_Clob;
+			$END
         end if;
         -- create package body
         v_Clob := Get_Package_Body (
