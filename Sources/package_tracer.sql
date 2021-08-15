@@ -278,7 +278,8 @@ IS
         p_Package_Name IN VARCHAR2,
         p_Package_Owner IN VARCHAR2,
         p_Editionable  IN VARCHAR2 DEFAULT 'N',
-        p_Type IN VARCHAR2 DEFAULT 'PACKAGE'
+        p_Type IN VARCHAR2 DEFAULT 'PACKAGE',
+        p_Strip_Comments IN VARCHAR2 DEFAULT 'Y'
     ) RETURN CLOB;
 
     FUNCTION Get_Package_Synonym_Text (
@@ -287,12 +288,13 @@ IS
     ) RETURN VARCHAR2;
 
     TYPE rec_record_fields IS RECORD (
-    	Type_name 		VARCHAR2(512),
-    	Item_Name		VARCHAR2(512),
-    	Item_Type		VARCHAR2(512),
-    	Index_by		VARCHAR2(512),
-    	Nested_Table	VARCHAR2(1),
-    	Table_Type 		VARCHAR2(512)
+    	Type_name 		VARCHAR2(128 BYTE),
+    	Item_Name		VARCHAR2(128 BYTE),
+    	Item_Type		VARCHAR2(512 BYTE),
+    	Item_Sequence	INTEGER,
+    	Index_by		VARCHAR2(128 BYTE),
+    	Nested_Table	VARCHAR2(1 BYTE),
+    	Table_Type 		VARCHAR2(20 BYTE)
     );
     TYPE tab_record_fields IS TABLE OF rec_record_fields;
     -- list record and table types of a package
@@ -300,28 +302,19 @@ IS
         p_Package_Name IN VARCHAR2,
         p_Package_Owner IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
     ) RETURN tab_record_fields PIPELINED;
-
-    TYPE rec_package_record_type IS RECORD (
-    	Synonym_Owner	VARCHAR2(128),
-    	Synonym_Name	VARCHAR2(128),
-    	Package_Owner	VARCHAR2(128),
-    	Package_Name	VARCHAR2(128),
-    	Type_name 		VARCHAR2(512),
-    	Item_Name		VARCHAR2(512),
-    	Item_Type		VARCHAR2(512),
-    	Index_by		VARCHAR2(512),
-    	Nested_Table	VARCHAR2(1),
-    	Table_Type 		VARCHAR2(512)
-    );
-    TYPE tab_package_record_type IS TABLE OF rec_package_record_type;
-    
-    FUNCTION Pipe_Package_Record_types 
-    RETURN tab_package_record_type PIPELINED;
     
     FUNCTION Get_Record_Fields (
         p_Package_Head IN CLOB,
         p_Type_Subname IN VARCHAR2,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_temp'
+    ) RETURN VARCHAR2;
+
+    FUNCTION Get_Record_Fields (
+        p_Package_Name IN VARCHAR2,
+        p_Package_Owner IN VARCHAR2,
+        p_Type_Subname IN VARCHAR2,
+        p_Variable_Name IN VARCHAR2 DEFAULT 'lv_temp',
+        p_Owner IN VARCHAR2 DEFAULT NULL
     ) RETURN VARCHAR2;
 
     PROCEDURE Enable (
@@ -360,9 +353,70 @@ IS
         p_Use_Dbms_Output BOOLEAN DEFAULT TRUE,
         p_Do_Execute BOOLEAN DEFAULT TRUE
     );
+
+    PROCEDURE Refresh_After_DDL_Job;
+    PROCEDURE Launch_Refresh_Job;
 END package_tracer;
 /
 
+DECLARE
+	PROCEDURE DROP_MVIEW( p_MView_Name VARCHAR2) IS
+		time_limit_exceeded EXCEPTION;
+		PRAGMA EXCEPTION_INIT (time_limit_exceeded, -4021); -- ORA-04021: timeout occurred while waiting to lock object 
+		mview_does_not_exist EXCEPTION;
+		PRAGMA EXCEPTION_INIT (mview_does_not_exist, -12003); -- ORA-12003: materialized view does not exist
+		v_count NUMBER := 0;
+	BEGIN		
+		LOOP 
+			BEGIN 
+				EXECUTE IMMEDIATE 'DROP MATERIALIZED VIEW ' || p_MView_Name;
+        		-- DBMS_OUTPUT.PUT_LINE('DROP MATERIALIZED VIEW ' || p_MView_Name || ';');
+        		EXIT;
+			EXCEPTION
+				WHEN time_limit_exceeded THEN 
+					APEX_UTIL.PAUSE(1/2);
+					v_count := v_count + 1;
+					EXIT WHEN v_count > 10;
+				WHEN mview_does_not_exist THEN
+					EXIT;
+			END;
+		END LOOP;
+	END;
+BEGIN
+    NULL;
+	DROP_MVIEW('MV_PACKAGE_RECORD_TYPES');
+END;
+/
+
+CREATE MATERIALIZED VIEW MV_PACKAGE_RECORD_TYPES (
+	Package_Owner, Package_Name,
+	Type_Name, Item_Name, Item_Type, Item_Sequence, Index_By, Nested_Table, Table_Type
+)
+	NOLOGGING
+	BUILD DEFERRED
+    REFRESH COMPLETE
+    ON DEMAND
+AS
+SELECT 
+    A.Package_Owner, A.Package_Name, 
+    UPPER(T.Type_Name) Type_Name, 
+    T.Item_Name, 
+    UPPER(T.Item_Type) Item_Type, 
+    T.Item_Sequence, T.Index_By, T.Nested_Table, T.Table_Type
+FROM (        
+    select distinct
+        SYN.TABLE_OWNER     Package_Owner,
+        SYN.TABLE_NAME      Package_Name
+    from SYS.All_Synonyms SYN
+    join SYS.All_Objects OBJ on SYN.TABLE_NAME = OBJ.OBJECT_NAME and SYN.TABLE_OWNER = OBJ.OWNER
+    where Syn.OWNER IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') )
+    and OBJ.OBJECT_TYPE = 'PACKAGE'
+) A, table(package_tracer.Pipe_Record_types(p_Package_Name=>A.PACKAGE_NAME, p_Package_Owner=>A.PACKAGE_OWNER)) T
+;
+
+CREATE INDEX MV_PACKAGE_RECORD_TYPES_IND1 ON MV_PACKAGE_RECORD_TYPES(Package_Owner, Package_Name, Item_Type, Nested_Table) COMPRESS;
+
+COMMENT ON MATERIALIZED VIEW MV_PACKAGE_RECORD_TYPES IS 'Package Record and pls/table definitions for package_tracer';
 
 CREATE OR REPLACE PACKAGE BODY package_tracer
 IS
@@ -452,15 +506,7 @@ IS
     IS 
     begin   
         for cur in (
-			with ARGUMENTS_Q as (
-				-- function arguments and return values of type record or table
-                select 
-                	T.PACKAGE_NAME, T.PACKAGE_OWNER, 
-					T.TYPE_NAME, T.ITEM_NAME, T.ITEM_TYPE, T.Index_By, T.Nested_Table, T.Table_Type
-				from TABLE(Pipe_Package_Record_types) T
-                where T.Nested_Table = 'Y' 
-			)
-            select
+			select
                 SYN.OWNER           Synonym_Owner, 
                 SYN.SYNONYM_NAME    Synonym_Name,
                 SYN.TABLE_OWNER     Package_Owner,
@@ -470,13 +516,14 @@ IS
             where Syn.OWNER IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') )
             and SYN.SYNONYM_NAME LIKE p_Search_Name
             and OBJ.OBJECT_TYPE = 'PACKAGE'
-/*			and NOT EXISTS ( -- package defines no nested record types for function arguments and return values 
-				select 1
-				from ARGUMENTS_Q A
+			and NOT EXISTS ( -- package defines no nested record types for function arguments and return values 
+				select 1 
+				from MV_PACKAGE_RECORD_TYPES A
 				where A.PACKAGE_NAME = SYN.TABLE_NAME
 				and A.PACKAGE_OWNER = SYN.TABLE_OWNER
+				and A.Nested_Table = 'Y' 
             )
-*/          and NOT EXISTS (
+            and NOT EXISTS (
             	select * from SYS.ALL_ARGUMENTS A
 				where A.data_type IN ('UNDEFINED')
 				and A.PACKAGE_NAME = SYN.TABLE_NAME
@@ -533,72 +580,91 @@ IS
     IS 
     begin   
         for cur in (
-            WITH DEPS AS (
-                SELECT Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME,
-                    STATEMENT_AGG(DEP.GRANT_STAT) GRANT_STATS,
-                    STATEMENT_AGG(DEP.REVOKE_STAT) REVOKE_STATS,
-                    STATEMENT_AGG(DEP.SYNONYM_STAT) SYNONYM_STATS
-                FROM table(package_tracer.get_Packages_List) SYN
-                LEFT OUTER JOIN (
-                    SELECT DISTINCT DA.Owner Object_Owner, DA.Name Object_Name,
-                        case when PRI.Privilege IS NULL and DA.referenced_Owner != 'PUBLIC' then 
-                            'GRANT ' || case when OBJ.OBJECT_TYPE IN ('TABLE', 'VIEW') then 'SELECT' else 'EXECUTE' end 
-                            || ' ON ' || DA.referenced_Owner || '.' || DA.referenced_Name 
-                            || ' TO ' || p_Dest_Schema  
-                        end GRANT_STAT,
-                        case when PRI.Privilege IS NOT NULL and PRI.Grantee = p_Dest_Schema then 
-                            'REVOKE ' || PRI.Privilege
-                            || ' ON ' || DA.referenced_Owner || '.' || DA.referenced_Name 
-                            || ' FROM ' || p_Dest_Schema 
-                        end REVOKE_STAT,
-                        case when SYN.OWNER IS NULL AND DB.REFERENCED_OWNER IS NULL then 
-                            'CREATE OR REPLACE SYNONYM ' || p_Dest_Schema || '.' || DA.referenced_Name
-                            || ' FOR ' || DA.referenced_Owner || '.' || DA.referenced_Name 
-                        end SYNONYM_STAT,
-                        PRI.Grantable,
-                        PRI.Privilege,
-                        SYN.OWNER SYNONYM_OWNER
-                    FROM SYS.ALL_DEPENDENCIES DA
-                    LEFT OUTER JOIN SYS.ALL_SYNONYMS SYN 
-                        ON SYN.OWNER IN (p_Dest_Schema, 'PUBLIC')
-                        AND Syn.Synonym_Name = DA.referenced_Name
-                    LEFT OUTER JOIN SYS.ALL_TAB_PRIVS PRI 
-                        ON Pri.table_Schema = DA.referenced_Owner 
-                        AND Pri.table_Name = DA.referenced_Name
-                        AND Pri.type = DA.referenced_Type
-                        AND PRI.Grantee IN (p_Dest_Schema, 'PUBLIC')
-                        AND PRI.privilege IN ('EXECUTE', 'SELECT')
-                    LEFT OUTER JOIN ( -- no VIEW OR SYNONYM with this name already exists
-                        SELECT DB.REFERENCED_NAME, DB.REFERENCED_OWNER
-                        FROM SYS.ALL_DEPENDENCIES DB 
-                        WHERE DB.OWNER = p_Dest_Schema
-                        AND DB.NAME = DB.REFERENCED_NAME
-                        AND DB.TYPE IN ('SYNONYM', 'VIEW')
-                    ) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER
-                    LEFT OUTER JOIN SYS.ALL_OBJECTS OBJ ON OBJ.OWNER = DA.OWNER and OBJ.OBJECT_NAME = DA.REFERENCED_NAME
-                    WHERE (SYN.OWNER IS NULL OR PRI.PRIVILEGE IS NULL)
-                    AND NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME = 'STANDARD')
-                ) DEP ON DEP.Object_Owner = SYN.PACKAGE_OWNER AND DEP.Object_Name = SYN.PACKAGE_NAME
-                GROUP BY SYN.SYNONYM_NAME, SYN.PACKAGE_OWNER, SYN.PACKAGE_NAME
-            ), CONFLICTING_Q AS (
+            WITH SYNONYMS_Q AS (
+				SELECT Object_Owner, Object_Name,
+					STATEMENT_AGG(SYNONYM_STAT) SYNONYM_STATS
+				FROM (
+					SELECT DISTINCT 
+						DA.Owner Object_Owner, DA.Name Object_Name,
+						'CREATE OR REPLACE SYNONYM ' || p_Dest_Schema || '.' || DA.referenced_Name
+						|| ' FOR ' || DA.referenced_Owner || '.' || DA.referenced_Name 
+						SYNONYM_STAT
+					FROM SYS.ALL_DEPENDENCIES DA
+					WHERE NOT EXISTS (SELECT 1 
+						FROM SYS.ALL_SYNONYMS SYN 
+						WHERE SYN.OWNER IN (p_Dest_Schema, 'PUBLIC')
+						AND Syn.Synonym_Name = DA.referenced_Name
+					)
+					AND NOT EXISTS (SELECT 1 -- no VIEW OR SYNONYM with this name already exists
+						FROM SYS.ALL_DEPENDENCIES DB 
+						WHERE DB.OWNER = p_Dest_Schema
+						AND DB.NAME = DB.REFERENCED_NAME
+						AND DB.TYPE IN ('SYNONYM', 'VIEW')
+						AND DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER
+					)
+					AND NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME IN ('STANDARD','DBMS_STANDARD'))
+				) GROUP BY Object_Owner, Object_Name
+            ), PRIVS_Q AS (
+				SELECT Object_Owner, Object_Name,
+					STATEMENT_AGG(GRANT_STAT) GRANT_STATS,
+					STATEMENT_AGG(REVOKE_STAT) REVOKE_STATS
+			   FROM (
+					SELECT DISTINCT DA.Owner Object_Owner, DA.Name Object_Name,
+						case when PRI.Privilege IS NULL and DA.referenced_Owner != 'PUBLIC' then 
+							'GRANT ' || case when OBJ.OBJECT_TYPE IN ('TABLE', 'VIEW') then 'SELECT' else 'EXECUTE' end 
+							|| ' ON ' || DA.referenced_Owner || '.' || DA.referenced_Name 
+							|| ' TO ' || p_Dest_Schema  
+						end GRANT_STAT,
+						case when PRI.Privilege IS NOT NULL and PRI.Grantee = p_Dest_Schema then 
+							'REVOKE ' || PRI.Privilege
+							|| ' ON ' || DA.referenced_Owner || '.' || DA.referenced_Name 
+							|| ' FROM ' || p_Dest_Schema 
+						end REVOKE_STAT,
+						PRI.Grantable,
+						PRI.Privilege
+					FROM SYS.ALL_DEPENDENCIES DA
+					LEFT OUTER JOIN SYS.ALL_TAB_PRIVS PRI 
+						ON Pri.table_Schema = DA.referenced_Owner 
+						AND Pri.table_Name = DA.referenced_Name
+						AND Pri.type = DA.referenced_Type
+						AND PRI.Grantee IN (p_Dest_Schema, 'PUBLIC')
+						AND PRI.privilege IN ('EXECUTE', 'SELECT')
+					LEFT OUTER JOIN SYS.ALL_OBJECTS OBJ 
+						ON OBJ.OWNER = DA.OWNER and OBJ.OBJECT_NAME = DA.REFERENCED_NAME
+					WHERE (PRI.PRIVILEGE IS NULL and DA.referenced_Owner != 'PUBLIC'
+						OR PRI.Privilege IS NOT NULL and PRI.Grantee = p_Dest_Schema)
+					AND NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME IN ('STANDARD','DBMS_STANDARD'))
+				) GROUP BY Object_Owner, Object_Name
+            ) , DEPS AS (
+                SELECT PL.SYNONYM_NAME, PL.PACKAGE_OWNER, PL.PACKAGE_NAME,
+                    P.GRANT_STATS,
+                    P.REVOKE_STATS,
+                    S.SYNONYM_STATS
+                FROM table(package_tracer.get_Packages_List) PL
+                LEFT OUTER JOIN SYNONYMS_Q S ON S.Object_Owner = PL.PACKAGE_OWNER AND S.Object_Name = PL.PACKAGE_NAME
+                LEFT OUTER JOIN PRIVS_Q P ON P.Object_Owner = PL.PACKAGE_OWNER AND P.Object_Name = PL.PACKAGE_NAME
+             ), CONFLICTING_Q AS (
 					-- package defines types that are used for arguments in other packages
 				select A.OWNER, A.TYPE_NAME, 
 					LISTAGG(A.PACKAGE_NAME, ', ') WITHIN GROUP (ORDER BY A.PACKAGE_NAME) CONFLICTING_OBJECTS
-				from (
+				from (  -- record types are used in Dependent packages for arguments
 					select distinct A.OWNER, A.TYPE_NAME, A.PACKAGE_NAME 
 					from SYS.ALL_ARGUMENTS A
 					where A.TYPE_OBJECT_TYPE = 'PACKAGE'
 					and A.DATA_TYPE IN ('PL/SQL TABLE', 'PL/SQL RECORD', 'TABLE')
 					and not(A.TYPE_OWNER = A.OWNER
 					    and A.TYPE_NAME = A.PACKAGE_NAME)
-				/*	union  -- produces false prositives for function default values
-					select DA.REFERENCED_OWNER OWNER, DA.REFERENCED_NAME TYPE_NAME, DA.NAME PACKAGE_NAME
-					from SYS.All_Dependencies DA
+					union  -- record types are used in Dependent packages for own types
+					select distinct DA.REFERENCED_OWNER OWNER, DA.REFERENCED_NAME TYPE_NAME, DA.NAME PACKAGE_NAME
+					from SYS.All_Dependencies DA 
+					join MV_PACKAGE_RECORD_TYPES RT 
+						on DA.NAME = RT.PACKAGE_NAME 
+						and DA.OWNER = RT.PACKAGE_OWNER 
+						and Rt.Item_Type LIKE DA.REFERENCED_NAME ||'.%'
 					where DA.TYPE = 'PACKAGE'
 					and DA.OWNER = DA.REFERENCED_OWNER
 					and DA.REFERENCED_TYPE = 'PACKAGE'
-					and NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME IN ('STANDARD','DBMS_STANDARD'))
-				*/
+					and NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME IN ('STANDARD','DBMS_STANDARD')) 
 				) A 
 				group by A.OWNER, A.TYPE_NAME
             )
@@ -624,8 +690,9 @@ IS
                     ) THEN 'Y' ELSE 'N' END IS_ENABLED,
                     GRANT_STATS, REVOKE_STATS, SYNONYM_STATS,
                     (SELECT COUNT(*) 
-                     FROM SYS.USER_ERRORS ERR
+                     FROM SYS.ALL_ERRORS ERR
                      WHERE ERR.NAME = D.SYNONYM_NAME
+                     AND ERR.OWNER = p_Dest_Schema
                      AND ERR.TYPE LIKE 'PACKAGE%'
                     ) ERROR_COUNT
                 FROM DEPS D
@@ -635,8 +702,9 @@ IS
                     TO_CLOB(NULL) REVOKE_STATS, 
                     TO_CLOB('CREATE OR REPLACE ' || SYNONYM_STATS || ';') SYNONYM_STATS,
                     (SELECT COUNT(*) 
-                     FROM SYS.USER_ERRORS ERR
+                     FROM SYS.ALL_ERRORS ERR
                      WHERE ERR.NAME = D.SYNONYM_NAME
+                     AND ERR.OWNER = p_Dest_Schema
                      AND ERR.TYPE LIKE 'PACKAGE%'
                     ) ERROR_COUNT
                 FROM (
@@ -667,72 +735,83 @@ IS
     	v_Dest_Schema CONSTANT VARCHAR2(128) := SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA');
     begin   
         for cur in (
-            WITH DEPS AS (
-                SELECT Syn.SYNONYM_NAME, Syn.PACKAGE_OWNER, Syn.PACKAGE_NAME,
-                    STATEMENT_AGG(DEP.GRANT_STAT) GRANT_STATS,
-                    STATEMENT_AGG(DEP.REVOKE_STAT) REVOKE_STATS,
-                    STATEMENT_AGG(DEP.SYNONYM_STAT) SYNONYM_STATS
-                FROM table(get_APEX_Packages_List) SYN
-                LEFT OUTER JOIN (
-                    SELECT DISTINCT DA.Owner Object_Owner, DA.Name Object_Name,
-                        case when PRI.Privilege IS NULL and DA.referenced_Owner != 'PUBLIC' then 
-                            'GRANT ' || case when OBJ.OBJECT_TYPE IN ('TABLE', 'VIEW') then 'SELECT' else 'EXECUTE' end 
-                            || ' ON ' || DA.referenced_Owner || '.' || DA.referenced_Name 
-                            || ' TO ' || v_Dest_Schema
-                        end GRANT_STAT,
-                        case when PRI.Privilege IS NOT NULL and PRI.Grantee = v_Dest_Schema then
-                            'REVOKE ' || PRI.Privilege
-                            || ' ON '|| DA.referenced_Owner || '.' || DA.referenced_Name 
-                            || ' FROM ' || v_Dest_Schema 
-                        end REVOKE_STAT,
-                        case when Syn.Owner IS NULL AND DB.REFERENCED_OWNER IS NULL then 
-                            'CREATE OR REPLACE SYNONYM ' || v_Dest_Schema || '.' || DA.referenced_Name
-                            || ' FOR ' || DA.referenced_Owner || '.' || DA.referenced_Name 
-                        end SYNONYM_STAT,
-                        PRI.Grantable,
-                        PRI.Privilege,
-                        SYN.OWNER SYNONYM_OWNER
-                    FROM SYS.ALL_DEPENDENCIES DA
-                    LEFT OUTER JOIN SYS.ALL_SYNONYMS SYN 
-                        ON SYN.OWNER IN (v_Dest_Schema, 'PUBLIC')
-                        AND Syn.Synonym_Name = DA.referenced_Name
-                    LEFT OUTER JOIN SYS.ALL_TAB_PRIVS PRI 
-                        ON Pri.table_Schema = DA.referenced_Owner 
-                        AND Pri.table_Name = DA.referenced_Name
-                        AND Pri.type = DA.referenced_Type
-                        AND PRI.Grantee IN (v_Dest_Schema, 'PUBLIC')
-                        AND PRI.privilege IN ('EXECUTE', 'SELECT')
-                    LEFT OUTER JOIN ( -- no VIEW OR SYNONYM with this name already exists
-                        SELECT DB.REFERENCED_NAME, DB.REFERENCED_OWNER
-                        FROM SYS.ALL_DEPENDENCIES DB
-                        WHERE DB.OWNER = v_Dest_Schema
-                        AND DB.NAME = DB.REFERENCED_NAME
-                        AND DB.TYPE IN ('SYNONYM', 'VIEW')
-                    ) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER
-                    LEFT OUTER JOIN SYS.ALL_OBJECTS OBJ ON OBJ.OWNER = DA.OWNER and OBJ.OBJECT_NAME = DA.REFERENCED_NAME
-                    WHERE (SYN.OWNER IS NULL OR PRI.PRIVILEGE IS NULL)
-                    AND NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME = 'STANDARD')
-                ) DEP ON DEP.Object_Owner = SYN.PACKAGE_OWNER AND DEP.Object_Name = SYN.PACKAGE_NAME
-                GROUP BY SYN.SYNONYM_NAME, SYN.PACKAGE_OWNER, SYN.PACKAGE_NAME
+            WITH SYNONYMS_Q AS (
+				SELECT Object_Owner, Object_Name,
+					STATEMENT_AGG(SYNONYM_STAT) SYNONYM_STATS
+				FROM (
+					SELECT DISTINCT 
+						DA.Owner Object_Owner, DA.Name Object_Name,
+						'CREATE OR REPLACE SYNONYM ' || v_Dest_Schema || '.' || DA.referenced_Name
+						|| ' FOR ' || DA.referenced_Owner || '.' || DA.referenced_Name 
+						SYNONYM_STAT
+					FROM SYS.ALL_DEPENDENCIES DA
+					WHERE NOT EXISTS (SELECT 1 
+						FROM SYS.ALL_SYNONYMS SYN 
+						WHERE SYN.OWNER IN (v_Dest_Schema, 'PUBLIC')
+						AND Syn.Synonym_Name = DA.referenced_Name
+					)
+					AND NOT EXISTS (SELECT 1 -- no VIEW OR SYNONYM with this name already exists
+						FROM SYS.ALL_DEPENDENCIES DB 
+						WHERE DB.OWNER = v_Dest_Schema
+						AND DB.NAME = DB.REFERENCED_NAME
+						AND DB.TYPE IN ('SYNONYM', 'VIEW')
+						AND DB.REFERENCED_NAME = DA.REFERENCED_NAME and DB.REFERENCED_OWNER = DA.OWNER
+					)
+					AND NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME IN ('STANDARD','DBMS_STANDARD'))
+				) GROUP BY Object_Owner, Object_Name
+            ), PRIVS_Q AS (
+				SELECT Object_Owner, Object_Name,
+					STATEMENT_AGG(GRANT_STAT) GRANT_STATS,
+					STATEMENT_AGG(REVOKE_STAT) REVOKE_STATS
+			   FROM (
+					SELECT DISTINCT DA.Owner Object_Owner, DA.Name Object_Name,
+						case when PRI.Privilege IS NULL and DA.referenced_Owner != 'PUBLIC' then 
+							'GRANT ' || case when OBJ.OBJECT_TYPE IN ('TABLE', 'VIEW') then 'SELECT' else 'EXECUTE' end 
+							|| ' ON ' || DA.referenced_Owner || '.' || DA.referenced_Name 
+							|| ' TO ' || v_Dest_Schema  
+						end GRANT_STAT,
+						case when PRI.Privilege IS NOT NULL and PRI.Grantee = v_Dest_Schema then 
+							'REVOKE ' || PRI.Privilege
+							|| ' ON ' || DA.referenced_Owner || '.' || DA.referenced_Name 
+							|| ' FROM ' || v_Dest_Schema 
+						end REVOKE_STAT,
+						PRI.Grantable,
+						PRI.Privilege
+					FROM SYS.ALL_DEPENDENCIES DA
+					LEFT OUTER JOIN SYS.ALL_TAB_PRIVS PRI 
+						ON Pri.table_Schema = DA.referenced_Owner 
+						AND Pri.table_Name = DA.referenced_Name
+						AND Pri.type = DA.referenced_Type
+						AND PRI.Grantee IN (v_Dest_Schema, 'PUBLIC')
+						AND PRI.privilege IN ('EXECUTE', 'SELECT')
+					LEFT OUTER JOIN SYS.ALL_OBJECTS OBJ 
+						ON OBJ.OWNER = DA.OWNER and OBJ.OBJECT_NAME = DA.REFERENCED_NAME
+					WHERE (PRI.PRIVILEGE IS NULL and DA.referenced_Owner != 'PUBLIC'
+						OR PRI.Privilege IS NOT NULL and PRI.Grantee = v_Dest_Schema)
+					AND NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME IN ('STANDARD','DBMS_STANDARD'))
+				) GROUP BY Object_Owner, Object_Name
             ), CONFLICTING_Q AS (
 					-- package defines types that are used for arguments in other packages
 				select A.OWNER, A.TYPE_NAME,
 					LISTAGG(A.PACKAGE_NAME, ', ') WITHIN GROUP (ORDER BY A.PACKAGE_NAME) CONFLICTING_OBJECTS
-				from (
+				from ( -- record types are used in Dependent packages for arguments
 					select distinct A.OWNER, A.TYPE_NAME, A.PACKAGE_NAME 
 					from SYS.ALL_ARGUMENTS A
 					where A.TYPE_OBJECT_TYPE = 'PACKAGE'
 					and A.DATA_TYPE IN ('PL/SQL TABLE', 'PL/SQL RECORD', 'TABLE')
 					and not(A.TYPE_OWNER = A.OWNER
 						and A.TYPE_NAME = A.PACKAGE_NAME)
-				/*	union -- produces false prositives for function default values
-					select DA.REFERENCED_OWNER OWNER, DA.REFERENCED_NAME TYPE_NAME, DA.NAME PACKAGE_NAME
-					from SYS.All_Dependencies DA
+					union  -- record types are used in Dependent packages for own types
+					select distinct DA.REFERENCED_OWNER OWNER, DA.REFERENCED_NAME TYPE_NAME, DA.NAME PACKAGE_NAME
+					from SYS.All_Dependencies DA 
+					join MV_PACKAGE_RECORD_TYPES RT 
+						on DA.NAME = RT.PACKAGE_NAME 
+						and DA.OWNER = RT.PACKAGE_OWNER 
+						and Rt.Item_Type LIKE DA.REFERENCED_NAME ||'.%'
 					where DA.TYPE = 'PACKAGE'
 					and DA.OWNER = DA.REFERENCED_OWNER
 					and DA.REFERENCED_TYPE = 'PACKAGE'
-					and NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME IN ('STANDARD','DBMS_STANDARD'))
-				*/
+					and NOT(DA.REFERENCED_OWNER = 'SYS' AND DA.REFERENCED_NAME IN ('STANDARD','DBMS_STANDARD')) 
 				) A
 				group by A.OWNER, A.TYPE_NAME
             )
@@ -745,24 +824,26 @@ IS
                 IS_ENABLED,
                 GRANT_STATS, REVOKE_STATS, SYNONYM_STATS,
                 CONFLICTING_OBJECTS,                
-                ERROR_COUNT
+				(SELECT COUNT(*) 
+				 FROM SYS.ALL_ERRORS ERR
+				 WHERE ERR.NAME = MAIN.SYNONYM_NAME
+				 AND ERR.OWNER = v_Dest_Schema
+				 AND ERR.TYPE LIKE 'PACKAGE%'
+				) ERROR_COUNT
             FROM (
-                SELECT D.SYNONYM_NAME, D.PACKAGE_OWNER, D.PACKAGE_NAME,
+                SELECT PL.SYNONYM_NAME, PL.PACKAGE_OWNER, PL.PACKAGE_NAME,
+                    P.GRANT_STATS, P.REVOKE_STATS, S.SYNONYM_STATS, CF.CONFLICTING_OBJECTS,
                     CASE WHEN EXISTS (
                         SELECT 1 
                         FROM SYS.USER_OBJECTS OBJ
-                        WHERE OBJ.OBJECT_NAME = D.SYNONYM_NAME
+                        WHERE OBJ.OBJECT_NAME = PL.SYNONYM_NAME
                         AND OBJECT_TYPE = 'PACKAGE'
-                    ) THEN 'Y' ELSE 'N' END IS_ENABLED,
-                    GRANT_STATS, REVOKE_STATS, SYNONYM_STATS,
-                    (SELECT COUNT(*) 
-                     FROM SYS.USER_ERRORS ERR
-                     WHERE ERR.NAME = D.SYNONYM_NAME
-                     AND ERR.TYPE LIKE 'PACKAGE%'
-                    ) ERROR_COUNT
-                FROM DEPS D
+                    ) THEN 'Y' ELSE 'N' END IS_ENABLED
+                FROM table(package_tracer.get_APEX_Packages_List) PL
+                LEFT OUTER JOIN SYNONYMS_Q S ON S.Object_Owner = PL.PACKAGE_OWNER AND S.Object_Name = PL.PACKAGE_NAME
+                LEFT OUTER JOIN PRIVS_Q P ON P.Object_Owner = PL.PACKAGE_OWNER AND P.Object_Name = PL.PACKAGE_NAME
+			    LEFT OUTER JOIN CONFLICTING_Q CF ON CF.OWNER = PL.PACKAGE_OWNER AND CF.TYPE_NAME = PL.PACKAGE_NAME
             ) MAIN
-		    LEFT OUTER JOIN CONFLICTING_Q CF ON CF.OWNER = MAIN.PACKAGE_OWNER AND CF.TYPE_NAME = MAIN.PACKAGE_NAME
         ) loop 
             pipe row (cur);
         end loop;
@@ -1414,7 +1495,8 @@ IS
         p_Package_Name IN VARCHAR2,
         p_Package_Owner IN VARCHAR2,
         p_Editionable  IN VARCHAR2 DEFAULT 'N',
-        p_Type IN VARCHAR2 DEFAULT 'PACKAGE'
+        p_Type IN VARCHAR2 DEFAULT 'PACKAGE',
+        p_Strip_Comments IN VARCHAR2 DEFAULT 'Y'
     ) RETURN CLOB
     IS
         v_Clob CLOB;
@@ -1448,6 +1530,16 @@ IS
                 dbms_lob.writeappend (v_Clob, length(v_SQLText), v_SQLText);
             end if;
         end loop;
+		if p_Strip_Comments = 'Y' then
+			-- remove leading blanks
+			v_Clob := LTRIM(v_Clob, chr(10)||chr(32));
+			-- remove comments
+			v_Clob := REGEXP_REPLACE(v_Clob, '^--.*$', '', 1, 0, 'm');
+			v_Clob := REGEXP_REPLACE(v_Clob, '/\*.+?\*/', '', 1, 0, 'n');
+			v_Clob := REGEXP_REPLACE(v_Clob, '\s*--.*$', '', 1, 0, 'm');
+			-- remove empty lines
+			v_Clob := REGEXP_REPLACE(v_Clob, chr(10)||'{2,}', chr(10), 1, 0, 'm');
+		end if;
         return v_Clob; 
     END Get_Package_Source;
 
@@ -1480,16 +1572,9 @@ IS
           v_Clob := REPLACE(v_Clob, Enquote_Name(p_Object_Name), Enquote_Name(p_Package_Name));
           v_Clob := REGEXP_REPLACE(v_Clob, 'end\s+'||p_Object_Name, 'end '||p_Package_Name, 1, 0, 'i');
         end if;    
-        -- remoce PRAGMA clauses
+        -- remove PRAGMA clauses
         v_Clob := REGEXP_REPLACE(v_Clob, 'PRAGMA\s+\w+\s*\(.+?\);', '', 1, 0, 'i');
         
-        -- remove leading blanks
-        v_Clob := LTRIM(v_Clob, chr(10)||chr(32));
-        -- remove comments
-        v_Clob := REGEXP_REPLACE(v_Clob, '/\*.+?\*/', '', 1, 0, 'n');
-        v_Clob := REGEXP_REPLACE(v_Clob, '\s*--.*$', '', 1, 0, 'm');
-        -- remove empty lines
-        v_Clob := REGEXP_REPLACE(v_Clob, chr(10)||'{2,}', chr(10), 1, 0, 'm');
         if g_debug then
             Log_Elapsed_Time(v_Timemark, '-- Get_Package_Spec: normalize source');      
         end if;
@@ -1515,7 +1600,8 @@ IS
     BEGIN 
         v_Clob := Get_Package_Source(
             p_Package_Name => p_Package_Name,
-            p_Package_Owner => p_Package_Owner
+            p_Package_Owner => p_Package_Owner,
+            p_Strip_Comments => 'N'
         );
 
         v_Comment := REGEXP_SUBSTR(v_Clob, '^-- It replaces : (.+)$', 1, 1, 'im', 1);
@@ -1539,6 +1625,7 @@ IS
 		v_Item_Name VARCHAR2(1000);
 		v_Item_Type VARCHAR2(1000);
 		v_Index_by VARCHAR2(1000);
+		v_Item_Sequence PLS_INTEGER;
         v_Table_Pattern CONSTANT VARCHAR2(100) := '\s+TYPE\s+(\w+)\s+IS\s+TABLE\s+OF\s*(\S+)\s*;';
         v_PL_Table_Pattern CONSTANT VARCHAR2(100) := '\s+TYPE\s+(\w+)\s+IS\s+TABLE\s+OF\s*(\S+)\s+INDEX BY\s+(\S+);';
 		v_out_row rec_record_fields;
@@ -1551,11 +1638,6 @@ IS
             p_Package_Name => p_Package_Name,
             p_Package_Owner => p_Package_Owner
         );
-        -- remove comments
-        v_Clob := REGEXP_REPLACE(v_Clob, '/\*.+?\*/', '', 1, 0, 'n');
-        v_Clob := REGEXP_REPLACE(v_Clob, '\s*--.*$', '', 1, 0, 'm');
-        -- remove empty lines
-        v_Clob := REGEXP_REPLACE(v_Clob, chr(10)||'{2,}', chr(10), 1, 0, 'm');
         if g_debug then
             Log_Elapsed_Time(v_Timemark, '-- Pipe_Record_types Get_Package_Source ');       
         end if;
@@ -1579,7 +1661,10 @@ IS
 			v_Offset := REGEXP_INSTR(v_Clob, v_Types_Pattern, v_Offset, 1, 1, 'in');
 		end loop;
         if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- Pipe_Record_types found '||v_Types_List.count||'types');       
+            Log_Elapsed_Time(v_Timemark, '-- Pipe_Record_types found '||v_Types_List.count||' types');       
+        end if;
+        if v_Types_List.count = 0 then 
+        	return;
         end if;
 		-- record types
 		v_Offset := 1;
@@ -1588,15 +1673,17 @@ IS
 			exit when v_Record_Type IS NULL;
 			v_Record_Text := REGEXP_SUBSTR(v_Clob, v_Record_Pattern, v_Offset, 1, 'in', 2);
 			v_Offset2 := 1;
+			v_Item_Sequence := 1;
 			for ind2 in 1..1000 loop
 				v_Item_Name := REGEXP_SUBSTR(v_Record_Text, v_Item_Pattern, v_Offset2, 1, 'im', 1);
 				exit when v_Item_Name IS NULL;
-				v_Item_Name := SUBSTR(v_Item_Name, 1, 512);
+				v_Item_Name := SUBSTR(v_Item_Name, 1, 128);
 				v_Item_Type := REGEXP_SUBSTR(v_Record_Text, v_Item_Pattern, v_Offset2, 1, 'im', 2);
 				v_Item_Type := SUBSTR(v_Item_Type, 1, 512);
 				v_out_row.Type_name	:= v_Record_Type;
 				v_out_row.Item_Name	:= v_Item_Name;
 				v_out_row.Item_Type	:= v_Item_Type;
+				v_out_row.Item_Sequence := v_Item_Sequence;
 				v_out_row.Index_by  := null;
 				v_out_row.Table_Type := 'RECORD';
 				if v_Types_List.EXISTS(lower(v_Item_Type)) then 
@@ -1607,9 +1694,13 @@ IS
 				end if;
 				PIPE ROW(v_out_row);
 				v_Offset2 := REGEXP_INSTR(v_Record_Text, v_Item_Pattern, v_Offset2, 1, 1, 'im');
+				v_Item_Sequence := v_Item_Sequence + 1;
 			end loop;
 			v_Offset := REGEXP_INSTR(v_Clob, v_Record_Pattern, v_Offset, 1, 1, 'in');
 		end loop;
+        if g_debug then
+            Log_Elapsed_Time(v_Timemark, '-- Pipe_Record_types record types done');       
+        end if;
 
         -- table types
 		v_Offset := 1;
@@ -1620,6 +1711,7 @@ IS
 			v_out_row.Type_name	:= v_Record_Type;
 			v_out_row.Item_Name	:= null;
 			v_out_row.Item_Type	:= v_Item_Type ;
+			v_out_row.Item_Sequence := 1;
 			v_out_row.Index_by  := null;
 			v_out_row.Table_Type := 'TABLE';
 			if v_Types_List.EXISTS(lower(v_Item_Type)) then 
@@ -1630,6 +1722,9 @@ IS
 			PIPE ROW(v_out_row);
 			v_Offset := REGEXP_INSTR(v_Clob, v_Table_Pattern, v_Offset, 1, 1, 'in');
 		end loop;
+        if g_debug then
+            Log_Elapsed_Time(v_Timemark, '-- Pipe_Record_types table types done');       
+        end if;
 		-- pl/sql table types
 		v_Offset := 1;
 		for ind in 1..1000 loop
@@ -1640,6 +1735,7 @@ IS
 			v_out_row.Type_name	:= v_Record_Type;
 			v_out_row.Item_Name	:= null;
 			v_out_row.Item_Type	:= v_Item_Type;
+			v_out_row.Item_Sequence := 1;
 			v_out_row.Index_by	:= v_Index_by;
 			v_out_row.Table_Type := 'PL/SQL TABLE';
 			if v_Types_List.EXISTS(lower(v_Item_Type)) then 
@@ -1655,32 +1751,6 @@ IS
         end if;
 		
     END Pipe_Record_types;
-
-    FUNCTION Pipe_Package_Record_types 
-    RETURN tab_package_record_type PIPELINED
-    IS 
-    BEGIN 
-        for cur in (
-			select 
-				A.Synonym_Owner, A.Synonym_Name,
-				A.Package_Owner, A.Package_Name, 
-				T.Type_Name, T.Item_Name, T.Item_Type, T.Index_By, T.Nested_Table, T.Table_Type
-			from (        
-				select
-					SYN.OWNER           Synonym_Owner, 
-					SYN.SYNONYM_NAME    Synonym_Name,
-					SYN.TABLE_OWNER     Package_Owner,
-					SYN.TABLE_NAME      Package_Name
-				from SYS.All_Synonyms SYN
-				join SYS.All_Objects OBJ on SYN.TABLE_NAME = OBJ.OBJECT_NAME and SYN.TABLE_OWNER = OBJ.OWNER
-				where Syn.OWNER IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') )
-				and OBJ.OBJECT_TYPE = 'PACKAGE'
-			) A, table(package_tracer.Pipe_Record_types(p_Package_Name=>A.PACKAGE_NAME, p_Package_Owner=>A.PACKAGE_OWNER)) T
-        ) loop 
-            pipe row (cur);
-        end loop;
-        return;
-    END Pipe_Package_Record_types;
 
     FUNCTION Get_Record_Fields (
         p_Package_Head IN CLOB,
@@ -1708,6 +1778,55 @@ IS
         return v_Result;
     END Get_Record_Fields;
 
+    FUNCTION Get_Record_Fields (
+        p_Package_Name IN VARCHAR2,
+        p_Package_Owner IN VARCHAR2,
+        p_Type_Subname IN VARCHAR2,
+        p_Variable_Name IN VARCHAR2 DEFAULT 'lv_temp',
+        p_Owner IN VARCHAR2 DEFAULT NULL
+    ) RETURN VARCHAR2
+    IS 
+		v_Result VARCHAR2(32767);
+    BEGIN 
+		for cur in (
+			select DISTINCT S.Item_Name, S.Item_Sequence, S.Item_Type, S.Table_Type,
+				T.TABLE_TYPE TYPE_ITEM_TYPE,
+				T.Package_Name, 
+				UPPER(T.Type_Name) SUB_Type_Name
+			from MV_PACKAGE_RECORD_TYPES S 
+			left outer join MV_PACKAGE_RECORD_TYPES T 
+				on (S.Item_type = T.Package_Name||'.' ||T.Type_Name
+					or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name)
+				and S.Package_Owner = T.Package_Owner
+			where S.Package_Name = p_Package_Name
+			and S.Package_Owner = p_Package_Owner
+			and S.Type_Name = UPPER(p_Type_Subname)
+			order by S.Item_Sequence
+		) loop
+			if cur.TYPE_ITEM_TYPE = 'RECORD'
+			and cur.SUB_Type_Name IS NOT NULL then 
+				v_Result := v_Result 
+				|| case when cur.Item_Sequence > 1 then ',' end
+				|| case when p_Owner IS NOT NULL then  p_Owner || '.' || cur.Package_Name || '.' end
+				|| cur.SUB_Type_Name 
+				|| '(' || Get_Record_Fields(
+					p_Package_Name => cur.Package_Name,
+					p_Package_Owner => p_Package_Owner,
+					p_Type_Subname => cur.SUB_Type_Name,
+					p_Variable_Name => p_Variable_Name 
+									|| case when cur.Item_Name IS NOT NULL 
+										then '.' || cur.Item_Name end,
+					p_Owner => p_Owner
+				) || ')';
+			elsif cur.Item_Name IS NOT NULL then
+				v_Result := v_Result 
+				|| case when cur.Item_Sequence > 1 then ',' end
+				|| p_Variable_Name || '.' || cur.Item_Name;
+			end if;
+		end loop;
+		return v_Result;
+    END Get_Record_Fields;
+
     FUNCTION Get_Package_Body (
         p_Object_Name IN VARCHAR2,
         p_Object_Owner IN VARCHAR2,
@@ -1727,31 +1846,41 @@ IS
         CURSOR all_proc_cur
         IS
             WITH TYPES_Q AS (
-            	SELECT TYPE_NAME, ITEM_TYPE, INDEX_BY, -- table row type; basic datatype or record type name
-            		NESTED_TABLE, TABLE_TYPE,
-            		case when RECORD_FIELDS is not null then ITEM_TYPE end RECORD_TYPE, 
-            		RECORD_FIELDS
+            	SELECT Package_Name, Package_Owner, Type_Name, 
+            		Item_Type, Index_By, -- table row type; basic datatype or record type name
+            		Nested_Table, Table_Type,
+            		case when Record_Fields is not null then Item_Type end Record_Type, 
+            		Record_Fields
            		FROM (
-					SELECT TYPE_NAME, ITEM_TYPE, INDEX_BY, NESTED_TABLE, TABLE_TYPE,
-						case when NESTED_TABLE = 'Y' 
+					SELECT Package_Name, Package_Owner, Type_Name, 
+						Item_Type, Index_By, Nested_Table, Table_Type,
+						case when Nested_Table = 'Y' 
 								or (INSTR(UPPER(ITEM_TYPE),'%TYPE') = 0 -- subtype
-								and package_tracer.Is_Printable_Type(UPPER(REGEXP_REPLACE (ITEM_TYPE, '\(.+?\)'))) = 'NO' -- pls_type
+								and package_tracer.Is_Printable_Type(UPPER(REGEXP_REPLACE (Item_Type, '\(.+?\)'))) = 'NO' -- pls_type
 								)
 							then 
-								package_tracer.Get_Record_Fields(
+								package_tracer.Get_Record_Fields (
+									p_Package_Name => Package_Name,
+									p_Package_Owner => Package_Owner,
+									p_Type_Subname => Item_Type,
+									p_Variable_Name => '#VAR#'
+								) 
+							/*package_tracer.Get_Record_Fields(
 									p_Package_Head=>v_Header, 
-									p_Type_Subname=>ITEM_TYPE,
-									p_Variable_Name=>'#VAR#')
+									p_Type_Subname=>Item_Type,
+									p_Variable_Name=>'#VAR#')*/
 						end RECORD_FIELDS
-					FROM package_tracer.Pipe_Record_types(p_Package_Name=>p_Object_Name, p_Package_Owner=>p_Object_Owner)
-					WHERE TABLE_TYPE != 'RECORD'
+					FROM MV_PACKAGE_RECORD_TYPES 
+					WHERE Table_Type != 'RECORD'
 				)
             ), RETURN_Q AS (
                 SELECT A.PACKAGE_NAME, A.OWNER, A.OBJECT_NAME PROCEDURE_NAME, A.SUBPROGRAM_ID, 
                         A.IN_OUT, 
                         A.PLS_TYPE RETURN_PLS_TYPE, 
                         A.DATA_TYPE RETURN_DATA_TYPE,
-                        A.TYPE_SUBNAME RETURN_TYPE_NAME,
+                        A.TYPE_NAME RETURN_TYPE_NAME,
+                        A.TYPE_OWNER RETURN_TYPE_OWNER,
+                        A.TYPE_SUBNAME RETURN_TYPE_SUBNAME,
                         NVL(T.INDEX_BY, 'PLS_INTEGER') RETURN_IDX_TYPE,
                         T.RECORD_TYPE RETURN_RECORD_TYPE,
                         T.RECORD_FIELDS RETURN_RECORD_FIELDS,
@@ -1771,7 +1900,10 @@ IS
                 	ON S.SYNONYM_NAME = A.TYPE_NAME
 					AND S.OWNER IN (p_Dest_Schema, 'PUBLIC') -- important
 					AND S.TABLE_NAME = A.TYPE_NAME
-				LEFT OUTER JOIN TYPES_Q T ON A.TYPE_SUBNAME = UPPER(T.TYPE_NAME)
+				LEFT OUTER JOIN TYPES_Q T 
+					ON A.TYPE_NAME = T.PACKAGE_NAME
+					AND A.TYPE_OWNER = T.PACKAGE_OWNER
+					AND A.TYPE_SUBNAME = T.TYPE_NAME
                 WHERE DATA_LEVEL = 0 
                 AND POSITION = 0
                 AND ARGUMENT_NAME IS NULL
@@ -1788,34 +1920,49 @@ IS
                         			|| ' := '
 									|| ARGUMENT_TYPE || '('
                         			|| case when DATA_TYPE = 'PL/SQL RECORD' and IN_OUT IN ('IN/OUT', 'IN') then 
-										package_tracer.Get_Record_Fields(
-											p_Package_Head=>v_Header, 
-											p_Type_Subname=>TYPE_SUBNAME, 
-											p_Variable_Name=>ARGUMENT_NAME) 
+										package_tracer.Get_Record_Fields (
+											p_Package_Name => TYPE_NAME,
+											p_Package_Owner => TYPE_OWNER,
+											p_Type_Subname => TYPE_SUBNAME,
+											p_Variable_Name => ARGUMENT_NAME,
+											p_Owner => TYPE_OWNER
+										)
 									end
 									|| ')'
                         		end
-                        		|| case when DATA_TYPE = 'PL/SQL TABLE' and ITEM_TYPE IS NOT NULL and RECORD_TYPE IS NOT NULL
+                        		|| case when DATA_TYPE = 'PL/SQL TABLE' and ITEM_TYPE IS NOT NULL -- and RECORD_TYPE IS NOT NULL
                         			then ';'||chr(10)||chr(9)
                         				||'idx' || A.POSITION || ' ' || INDEX_BY
-                        		end, ';'||chr(10)||chr(9)) WITHIN GROUP (ORDER BY POSITION) ARG_DECLARE_IN,
-                         LISTAGG(case when ARG_PREFIX IS NOT NULL and IN_OUT IN ('IN/OUT', 'IN') then 
-                         			case when DATA_TYPE = 'TABLE' and RECORD_TYPE IS NOT NULL and NESTED_TABLE = 'Y' then  
+                        		end, ';'||chr(10)||chr(9)) WITHIN GROUP (ORDER BY POSITION) 
+                        AS ARG_DECLARE_IN,
+                        LISTAGG(case when ARG_PREFIX IS NOT NULL and IN_OUT IN ('IN/OUT', 'IN') then 
+                         			case when DATA_TYPE = 'TABLE' and RECORD_TYPE IS NOT NULL -- and NESTED_TABLE = 'Y' 
+                         			then  
 										'FOR idx IN 1 .. ' || ARGUMENT_NAME || '.COUNT LOOP' || chr(10)||RPAD(' ', 8)
 										|| ARG_PREFIX || ARGUMENT_NAME || '(idx) := '
-										|| LOWER(A.OWNER || '.' || A.PACKAGE_NAME || '.' || RECORD_TYPE) || '('
-										|| REPLACE(RECORD_FIELDS, '#VAR#', ARGUMENT_NAME|| '(idx)')
-										|| ');' || chr(10)||RPAD(' ', 4)
+										|| package_tracer.Get_Record_Fields (
+											p_Package_Name => TYPE_NAME,
+											p_Package_Owner => TYPE_OWNER,
+											p_Type_Subname => TYPE_SUBNAME,
+											p_Variable_Name => ARGUMENT_NAME|| '(idx)',
+											p_Owner => TYPE_OWNER
+										)
+										|| ';' || chr(10)||RPAD(' ', 4)
 										|| 'END LOOP'
-									when DATA_TYPE = 'PL/SQL TABLE' and ITEM_TYPE IS NOT NULL and RECORD_TYPE IS NOT NULL
+									when DATA_TYPE = 'PL/SQL TABLE' and ITEM_TYPE IS NOT NULL -- and RECORD_TYPE IS NOT NULL
 									then 
 										'idx' || A.POSITION || ' := ' || ARGUMENT_NAME || '.FIRST;' || chr(10)||RPAD(' ', 4)
 										|| 'WHILE idx' || A.POSITION || ' IS NOT NULL LOOP' || chr(10)||RPAD(' ', 8)
 										|| ARG_PREFIX || ARGUMENT_NAME || '(idx' || A.POSITION || ') := '
 										|| case when RECORD_TYPE IS NOT NULL then 
-												LOWER(A.OWNER || '.' || A.PACKAGE_NAME || '.' || RECORD_TYPE) || '('
-												|| REPLACE(RECORD_FIELDS, '#VAR#', ARGUMENT_NAME|| '(idx' || A.POSITION || ')')
-												|| ');' 
+												package_tracer.Get_Record_Fields (
+													p_Package_Name => TYPE_NAME,
+													p_Package_Owner => TYPE_OWNER,
+													p_Type_Subname => TYPE_SUBNAME,
+													p_Variable_Name => ARGUMENT_NAME|| '(idx' || A.POSITION || ')',
+													p_Owner => TYPE_OWNER
+												)
+												|| ';' 
 											else 
 												ARGUMENT_NAME|| '(idx' || A.POSITION || ');'
 										end
@@ -1827,23 +1974,30 @@ IS
 										'select * bulk collect into ' || ARG_PREFIX || ARGUMENT_NAME
 										||' from table (' || ARGUMENT_NAME || ')' 
 									end
-                        		end, ';'||chr(10)||chr(9)) WITHIN GROUP (ORDER BY POSITION) ARG_CONVERT_IN,
-                       LISTAGG(case when ARG_PREFIX IS NOT NULL and IN_OUT IN ('IN/OUT', 'OUT')
+                        		end, ';'||chr(10)||chr(9)) WITHIN GROUP (ORDER BY POSITION) 
+                    	AS ARG_CONVERT_IN,
+                       	LISTAGG(case when ARG_PREFIX IS NOT NULL and IN_OUT IN ('IN/OUT', 'OUT')
                         		then 
                         			case when DATA_TYPE = 'PL/SQL RECORD' then 
 										ARGUMENT_NAME || ' := '
 										|| LOWER(p_Package_Name || '.' || TYPE_SUBNAME) || '('
-										|| package_tracer.Get_Record_Fields(
-											p_Package_Head=>v_Header, 
-											p_Type_Subname=>TYPE_SUBNAME, 
-											p_Variable_Name=>ARG_PREFIX|| ARGUMENT_NAME) 
+										|| package_tracer.Get_Record_Fields (
+												p_Package_Name => TYPE_NAME,
+												p_Package_Owner => TYPE_OWNER,
+												p_Type_Subname => TYPE_SUBNAME,
+												p_Variable_Name => ARG_PREFIX|| ARGUMENT_NAME
+											)
 										|| ')'
 									when DATA_TYPE = 'TABLE' and RECORD_TYPE IS NOT NULL and NESTED_TABLE = 'Y' then
 										'FOR idx IN 1 .. ' || ARGUMENT_NAME || '.COUNT LOOP' || chr(10)||RPAD(' ', 8)
 										|| ARGUMENT_NAME || '(idx) := '
-										|| RECORD_TYPE || '('
-										|| REPLACE(RECORD_FIELDS, '#VAR#', ARG_PREFIX || ARGUMENT_NAME|| '(idx)')
-										|| ');' || chr(10)||RPAD(' ', 4)
+										|| package_tracer.Get_Record_Fields (
+											p_Package_Name => TYPE_NAME,
+											p_Package_Owner => TYPE_OWNER,
+											p_Type_Subname => TYPE_SUBNAME,
+											p_Variable_Name => ARG_PREFIX || ARGUMENT_NAME|| '(idx)'
+										)
+										|| ';' || chr(10)||RPAD(' ', 4)
 										|| 'END LOOP'
 									
 									when DATA_TYPE = 'PL/SQL TABLE' and ITEM_TYPE IS NOT NULL AND RECORD_TYPE IS NOT NULL then 
@@ -1851,9 +2005,13 @@ IS
 										|| 'WHILE idx' || A.POSITION || ' IS NOT NULL LOOP' || chr(10)||RPAD(' ', 8)
 										|| ARGUMENT_NAME || '(' || 'idx' || A.POSITION || ') := '
 										|| case when RECORD_TYPE IS NOT NULL then 
-												RECORD_TYPE || '('
-												|| REPLACE(RECORD_FIELDS, '#VAR#', ARG_PREFIX || ARGUMENT_NAME|| '(' || 'idx' || A.POSITION || ')')
-												|| ');' 
+												package_tracer.Get_Record_Fields (
+													p_Package_Name => TYPE_NAME,
+													p_Package_Owner => TYPE_OWNER,
+													p_Type_Subname => TYPE_SUBNAME,
+													p_Variable_Name => ARG_PREFIX || ARGUMENT_NAME|| '(' || 'idx' || A.POSITION || ')'
+												)
+												|| ';' 
 											else 
 												ARG_PREFIX || ARGUMENT_NAME|| '(idx' || A.POSITION || ');'
 										end
@@ -1864,16 +2022,18 @@ IS
 										'select * bulk collect into ' || ARGUMENT_NAME
 										||' from table (' || ARG_PREFIX || ARGUMENT_NAME || ')' 
 									end
-                        		end, ';'||chr(10)||chr(9)) WITHIN GROUP (ORDER BY POSITION) ARG_CONVERT_OUT
+                        		end, ';'||chr(10)||chr(9)) WITHIN GROUP (ORDER BY POSITION) 
+                        AS ARG_CONVERT_OUT
 				FROM (
-					SELECT PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID, 
-						ARGUMENT_NAME, DATA_TYPE, POSITION, TYPE_SUBNAME, IN_OUT, ARGUMENT_TYPE, ARG_PREFIX, 
+					SELECT A.PACKAGE_NAME, A.OWNER, A.PROCEDURE_NAME, A.SUBPROGRAM_ID, 
+						A.ARGUMENT_NAME, A.DATA_TYPE, A.POSITION, A.TYPE_OWNER, A.TYPE_NAME, A.TYPE_SUBNAME, 
+						A.IN_OUT, A.ARGUMENT_TYPE, A.ARG_PREFIX, 
 						T.RECORD_TYPE, T.RECORD_FIELDS, T.ITEM_TYPE, T.NESTED_TABLE, T.INDEX_BY
 					FROM (SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, 
 								LOWER(ARGUMENT_NAME) ARGUMENT_NAME,
-								DATA_TYPE, POSITION, TYPE_SUBNAME, IN_OUT, 
+								DATA_TYPE, POSITION, TYPE_OWNER, TYPE_NAME, TYPE_SUBNAME, IN_OUT, 
 								lower(TYPE_OWNER || '.' || TYPE_NAME || '.' || TYPE_SUBNAME) ARGUMENT_TYPE,
-								case when TYPE_NAME = PACKAGE_NAME and TYPE_OBJECT_TYPE = 'PACKAGE' 
+								case when TYPE_OBJECT_TYPE = 'PACKAGE' 
 								and DATA_TYPE IN ('PL/SQL TABLE', 'PL/SQL RECORD', 'TABLE', 'VARRAY')
 									then 'l'
 								end ARG_PREFIX
@@ -1882,14 +2042,18 @@ IS
 						AND POSITION > 0
 						AND ARGUMENT_NAME IS NOT NULL
 					) A
-					LEFT OUTER JOIN TYPES_Q T ON A.TYPE_SUBNAME = UPPER(T.TYPE_NAME)
+					LEFT OUTER JOIN TYPES_Q T
+							ON A.TYPE_NAME = T.PACKAGE_NAME
+							AND A.TYPE_OWNER = T.PACKAGE_OWNER
+							AND A.TYPE_SUBNAME = T.TYPE_NAME
 				) A
                 GROUP BY PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID
             )
             SELECT PRO.PROCEDURE_NAME, 
                 PRO.SUBPROGRAM_ID, PRO.OVERLOAD,
                 PRO.AGGREGATE, PRO.PIPELINED, PRO.IMPLTYPEOWNER, PRO.IMPLTYPENAME,
-                RET.RETURN_TYPE, RET.TYPE_OBJECT_TYPE, RET.RETURN_TYPE_NAME, 
+                RET.RETURN_TYPE, RET.TYPE_OBJECT_TYPE, 
+                RET.RETURN_TYPE_NAME, RET.RETURN_TYPE_OWNER, RET.RETURN_TYPE_SUBNAME, 
                 RET.RETURN_IDX_TYPE, 
                 RET.RETURN_RECORD_TYPE, RET.RETURN_RECORD_FIELDS,
                 RET.RETURN_PLS_TYPE, RET.RETURN_DATA_TYPE, RET.CHAR_USED,
@@ -1955,10 +2119,6 @@ IS
             p_Package_Owner => p_Object_Owner,
             p_Editionable  => p_Editionable
         );
-        v_Header := LTRIM(v_Header, chr(10)||chr(32));
-        -- remove comments
-        v_Header := REGEXP_REPLACE(v_Header, '/\*.+?\*/', '', 1, 0, 'n');
-        v_Header := REGEXP_REPLACE(v_Header, '\s*--.*$', '', 1, 0, 'm');
         -- remove PRAGMA clauses
         v_Header := REGEXP_REPLACE(v_Header, 'PRAGMA\s+\w+\s*\(.+?\);', '', 1, 0, 'i');
         OPEN all_proc_cur;
@@ -2141,10 +2301,12 @@ IS
                         || ';' || chr(10) 
                         || '    '||p_Variable_Name||' := ' || v_proc_tbl(ind).DEST_RETURN_TYPE 
                         || '(' 
-                        || Get_Record_Fields(
-                        	p_Package_Head=>v_Header, 
-                        	p_Type_Subname=>v_proc_tbl(ind).RETURN_TYPE_NAME, 
-                        	p_Variable_Name=>'lv_temp') 
+                        || package_tracer.Get_Record_Fields (
+								p_Package_Name => v_proc_tbl(ind).RETURN_TYPE_NAME,
+								p_Package_Owner => v_proc_tbl(ind).RETURN_TYPE_OWNER,
+								p_Type_Subname => v_proc_tbl(ind).RETURN_TYPE_SUBNAME,
+								p_Variable_Name => 'lv_temp'
+							)
                         || ');'|| chr(10) 
                         || v_trace_output
                         || '    return '||p_Variable_Name||';' || chr(10);                    
@@ -2257,6 +2419,17 @@ IS
               RAISE_APPLICATION_ERROR(-20002, 'The package ' || v_Synonym_Name || ' already exists is the current schema.');
             -- option: the package is renamed and the tracing package takes it's name.
         end if;        
+
+		select COUNT(*) into v_Count
+		from MV_PACKAGE_RECORD_TYPES A
+		where A.PACKAGE_NAME = v_Package_Name_Out
+		and A.PACKAGE_OWNER = v_Package_Owner_Out
+		and A.Nested_Table = 'Y';
+        if v_Count > 0 then 
+            RAISE_APPLICATION_ERROR(-20003, 'The package ' || v_Synonym_Name || ' is defining nested record types for function arguments and can´t be traced.');
+            return;
+        end if;
+
 		if g_debug then
             Log_Elapsed_Time(v_Timemark, '-- Checked for table or record types');       
         end if;
@@ -2532,7 +2705,33 @@ IS
             end;
         end loop;
     end Disable_APEX;
+
+    PROCEDURE Refresh_After_DDL_Job
+	IS
+        v_Dest_Schema  CONSTANT VARCHAR2(128) := SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA');
+	BEGIN
+		DBMS_MVIEW.REFRESH(v_Dest_Schema||'.MV_PACKAGE_RECORD_TYPES');
+		DBMS_STATS.GATHER_TABLE_STATS(v_Dest_Schema, 'MV_PACKAGE_RECORD_TYPES');
+	END Refresh_After_DDL_Job;
+
+    PROCEDURE Launch_Refresh_Job
+	IS
+	BEGIN
+		dbms_scheduler.create_job(
+			job_name => 'RF_MV_PACKAGE_RECORD_TYPES',
+			job_type => 'PLSQL_BLOCK',
+			job_action => 'begin package_tracer.Refresh_After_DDL_Job; end;',
+			comments => 'Refresh MV_PACKAGE_RECORD_TYPES after DDL operation',
+			enabled => true 
+		);
+		COMMIT;
+	END Launch_Refresh_Job;
 END package_tracer;
+/
+
+begin 
+	package_tracer.Launch_Refresh_Job;
+end;
 /
 
 /*
@@ -2540,6 +2739,7 @@ END package_tracer;
 - Examples:
 GRANT EXECUTE ON APEX_190100.WWV_FLOW_SECURITY TO HR_DATA;
 
+ 
 set serveroutput on size unlimited
 call package_tracer.Enable('APEX_LANG');
 call package_tracer.Enable('APEX_UTIL');
@@ -2555,5 +2755,7 @@ DROP Type STATEMENT_AGG_TYPE;
 DROP Function STATEMENT_AGG;
 /
 DROP Package PACKAGE_TRACER;
+/
+DROP MATERIALIZED VIEW MV_PACKAGE_RECORD_TYPES;
 /
 */
