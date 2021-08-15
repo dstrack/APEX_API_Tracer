@@ -486,7 +486,7 @@ IS
            'APEX_ACL,APEX_APPLICATION_INSTALL,APEX_APP_SETTING,APEX_AUTHENTICATION,'
         || 'APEX_AUTHORIZATION,APEX_AUTOMATION,APEX_COLLECTION,APEX_CREDENTIAL,APEX_CSS,'
         || 'APEX_CUSTOM_AUTH,APEX_ESCAPE,APEX_EXPORT,APEX_IG,APEX_IR,APEX_ITEM,'
-        || 'APEX_JAVASCRIPT,APEX_LANG,APEX_LDAP,APEX_MAIL,APEX_PAGE,APEX_PKG_APP_INSTALL,'
+        || 'APEX_JAVASCRIPT,APEX_JSON,APEX_LANG,APEX_LDAP,APEX_MAIL,APEX_PAGE,APEX_PKG_APP_INSTALL,'
         || 'APEX_REGION,APEX_REST_SOURCE_SYNC,APEX_SESSION,APEX_SPATIAL,APEX_STRING,APEX_STRING_UTIL,APEX_THEME,'
         || 'APEX_UI_DEFAULT_UPDATE,APEX_UTIL,APEX_WEB_SERVICE,APEX_ZIP';
     begin   
@@ -561,12 +561,12 @@ $END
                 	'DBMS_UTILITY','DBMS_STATS','DBMS_STAT_FUNCS','DBMS_DEBUG','DBMS_TF',
                 	'DBMS_DATA_MINING_TRANSFORM','DBMS_HS_PARALLEL','OWA_COOKIE','OWA_TEXT' )
             )
-/*            and not (SYN.TABLE_OWNER LIKE 'APEX%' -- package defines nested record types for function arguments
+            and not (SYN.TABLE_OWNER LIKE 'APEX%' -- package defines nested record types for function arguments
             	and SYN.TABLE_NAME IN (
-            		'WWV_FLOW_EXEC_API','WWV_FLOW_PLUGIN_API','WWV_FLOW_PLUGIN_UTIL','WWV_FLOW_WORKSPACE_USER_API',
-            		'WWV_FLOW_JSON', 'WWV_FLOW_DATA_PARSER' )
+            		'WWV_FLOW_EXEC_API','WWV_FLOW_PLUGIN_API','WWV_FLOW_PLUGIN_UTIL',
+            		'WWV_FLOW_WORKSPACE_USER_API','WWV_FLOW_DATA_PARSER' )
             )
-*/            and SYN.SYNONYM_NAME NOT IN (
+            and SYN.SYNONYM_NAME NOT IN (
             	'API_TRACE',				-- because package_tracer is dependent on this object
             	'DBMS_OUTPUT',				-- because package_tracer is dependent on this object
             	'PACKAGE_TRACER',			-- because package_tracer is dependent on this object
@@ -1838,9 +1838,9 @@ $END
 				T.Type_Name SUB_Type_Name
 			from MV_PACKAGE_RECORD_TYPES S 
 			left outer join MV_PACKAGE_RECORD_TYPES T 
-				on (S.Item_type = T.Package_Name||'.' ||T.Type_Name
-					or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name)
-				and S.Package_Owner = T.Package_Owner
+				on (S.Item_type = T.Package_Owner||'.'||T.Package_Name||'.'||T.Type_Name
+				or S.Item_type = T.Package_Name||'.' ||T.Type_Name and S.Package_Owner = T.Package_Owner
+				or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name and S.Package_Owner = T.Package_Owner)
 			where S.Package_Name = p_Type_Name
 			and S.Package_Owner = p_Type_Owner
 			and S.Type_Name = UPPER(p_Type_Subname)
@@ -1901,9 +1901,9 @@ $END
 					-- , LISTAGG(T.Item_Name, ', ') WITHIN GROUP (ORDER BY T.Item_Sequence) Sub_Items
 				FROM MV_PACKAGE_RECORD_TYPES S
 				LEFT OUTER JOIN MV_PACKAGE_RECORD_TYPES T 
-					on (S.Item_type = T.Package_Name||'.' ||T.Type_Name
-						or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name)
-					and S.Package_Owner = T.Package_Owner
+					on (S.Item_type = T.Package_Owner||'.'||T.Package_Name||'.'||T.Type_Name
+					or S.Item_type = T.Package_Name||'.' ||T.Type_Name and S.Package_Owner = T.Package_Owner
+					or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name and S.Package_Owner = T.Package_Owner)
 				WHERE S.Table_Type != 'RECORD' -- Important
 				GROUP BY S.Package_Name, S.Package_Owner, S.Type_Name, 
 					S.Item_Type, S.Index_By, S.Nested_Table, S.Table_Type
