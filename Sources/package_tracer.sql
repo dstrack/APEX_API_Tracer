@@ -142,7 +142,7 @@ IS
     c_Package_Name             CONSTANT VARCHAR2(128) := lower($$plsql_unit);
     g_debug                    CONSTANT BOOLEAN := FALSE;
     g_Exclude_Nested_Tables    CONSTANT BOOLEAN := TRUE;
-    g_Use_Plscope_Settings     CONSTANT BOOLEAN := TRUE;
+    g_Use_Plscope_Settings     CONSTANT BOOLEAN := FALSE;
     
     TYPE rec_logging_calls IS RECORD (
         Package_Name    SYS.ALL_ARGUMENTS.PACKAGE_NAME%TYPE, 
@@ -418,6 +418,13 @@ FROM (
     join SYS.All_Objects OBJ on SYN.TABLE_NAME = OBJ.OBJECT_NAME and SYN.TABLE_OWNER = OBJ.OWNER
     where Syn.OWNER IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') )
     and OBJ.OBJECT_TYPE = 'PACKAGE'
+    UNION -- local packages
+    select distinct
+        OBJ.OWNER     		 Package_Owner,
+        OBJ.OBJECT_NAME      Package_Name
+    from SYS.All_Objects OBJ 
+    where OBJ.OWNER = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
+    and OBJ.OBJECT_TYPE = 'PACKAGE'
 ) A, table(package_tracer.Pipe_Record_types(p_Package_Name=>A.PACKAGE_NAME, p_Package_Owner=>A.PACKAGE_OWNER)) T
 ;
 
@@ -535,7 +542,8 @@ $IF package_tracer.g_Exclude_Nested_Tables $THEN
 $END
 			and NOT EXISTS (
             	select * from SYS.ALL_ARGUMENTS A
-				where A.data_type IN ('UNDEFINED')
+				where (A.DATA_TYPE IN ('UNDEFINED')
+					OR A.DATA_TYPE = 'OPAQUE/XMLTYPE' AND A.TYPE_SUBNAME LIKE'<%>') 
 				and A.PACKAGE_NAME = SYN.TABLE_NAME
 				and A.OWNER = SYN.TABLE_OWNER
             )
@@ -1401,10 +1409,8 @@ $END
                 || v_Condition_End
             WHEN p_Compact = 'N' and p_Logging_Start_Enabled = 'Y' THEN 
                 v_Condition_Start
-                || chr(10)
-                || rpad(' ', p_Indent+4)
-                || replace(replace(
-                    p_Logging_Start_Call, '%s',
+                || replace(chr(10)||replace(
+                	p_Logging_Start_Call, '%s',
                     api_trace.Format_Call_Parameter(
                         p_calling_subprog => CALLING_SUBPROG,
                         p_bind_char => null,
@@ -1415,8 +1421,7 @@ $END
                 || v_Condition_End
                 || chr(10) || '----' || chr(10) 
                 || v_Condition_Start
-                || chr(10) || rpad(' ', p_Indent+4)
-                || replace(replace(
+                || replace(chr(10) || replace(
                     p_Logging_Finish_Call, '%s',
                     case when OUT_COUNT > 0 then 
                         api_trace.Format_Call_Parameter(
@@ -1436,15 +1441,16 @@ $END
                             p_Variable_Name => p_Variable_Name
                         )
                     end
-                    || case when OUT_COUNT = 0 and RETURN_PLS_TYPE IS NULL then
+                    || case when not(OUT_COUNT > 0 
+                    		or RETURN_PLS_TYPE IS NOT NULL
+                    		or RETURN_DATA_TYPE IS NOT NULL) then
                         api_trace.Literal(CALLING_SUBPROG)
                     end
                 ), chr(10), chr(10) || rpad(' ', p_Indent))
                 || v_Condition_End
             WHEN p_Compact = 'N' and p_Logging_Start_Enabled = 'N' THEN 
                 v_Condition_Start
-                || chr(10) || rpad(' ', p_Indent+4)
-                || replace(replace(
+                || replace(chr(10) || replace(
                     p_Logging_API_Call, '%s',
                     api_trace.Format_Call_Parameter(
                         p_calling_subprog => CALLING_SUBPROG,
@@ -1651,7 +1657,8 @@ $END
 		v_Index_by VARCHAR2(1000);
 		v_Item_Sequence PLS_INTEGER;
         v_Table_Pattern CONSTANT VARCHAR2(100) := '\s+TYPE\s+(\w+)\s+IS\s+TABLE\s+OF\s*(\S+)\s*;';
-        v_PL_Table_Pattern CONSTANT VARCHAR2(100) := '\s+TYPE\s+(\w+)\s+IS\s+TABLE\s+OF\s*(\S+)\s+INDEX BY\s+(\S+);';
+        v_Varray_Pattern CONSTANT VARCHAR2(100) := '\s+TYPE\s+(\w+)\s+IS\s+VARRAY\s*(\S+)\s*OF\s+(\S+);';
+        v_PL_Table_Pattern CONSTANT VARCHAR2(100) := '\s+TYPE\s+(\w+)\s+IS\s+TABLE\s+OF\s*\((\S+)\)\s+INDEX BY\s+(\S+);';
 		v_out_row rec_record_fields;
         v_Timemark NUMBER := dbms_utility.get_time;
         v_Offset PLS_INTEGER;
@@ -1761,6 +1768,34 @@ $END
 		end loop;
         if g_debug then
             Log_Elapsed_Time(v_Timemark, '-- Pipe_Record_types table types done');       
+        end if;
+        -- varray types
+		v_Offset := 1;
+		for ind in 1..1000 loop
+			v_Record_Type := REGEXP_SUBSTR(v_Clob, v_Varray_Pattern, v_Offset, 1, 'in', 1);
+			exit when v_Record_Type IS NULL;
+			v_Types_List(lower(v_Record_Type)) := 'Y';
+			v_Index_by := REGEXP_SUBSTR(v_Clob, v_Varray_Pattern, v_Offset, 1, 'in', 2);
+			v_Item_Type := REGEXP_SUBSTR(v_Clob, v_Varray_Pattern, v_Offset, 1, 'in', 3);
+			v_out_row.Type_name	:= v_Record_Type;
+			v_out_row.Item_Name	:= null;
+			v_out_row.Item_Type	:= v_Item_Type ;
+			v_out_row.Item_Sequence := 1;
+			v_out_row.Index_by  := v_Index_by;
+			v_out_row.Table_Type := 'VARRAY';
+			v_Item_Type := lower(v_Item_Type);
+			if v_Types_List.EXISTS(v_Item_Type) then 
+				v_out_row.Type_Object_Type := v_Object_Type_List(v_Item_Type);
+				v_out_row.Nested_Table := v_Types_List(v_Item_Type);
+			else 
+				v_out_row.Type_Object_Type := 'PACKAGE';
+				v_out_row.Nested_Table := 'N';
+			end if;
+			PIPE ROW(v_out_row);
+			v_Offset := REGEXP_INSTR(v_Clob, v_Varray_Pattern, v_Offset, 1, 1, 'in');
+		end loop;
+        if g_debug then
+            Log_Elapsed_Time(v_Timemark, '-- Pipe_Record_types table varray done');       
         end if;
 		-- pl/sql table types
 		v_Offset := 1;
@@ -1918,12 +1953,13 @@ $END
                         T.INDEX_BY RETURN_IDX_TYPE,
                         T.RECORD_TYPE RETURN_RECORD_TYPE,
                         A.CHAR_USED,
-                        CASE when A.TYPE_NAME IS NOT NULL THEN 
+                        CASE WHEN A.TYPE_NAME IS NOT NULL THEN 
                             CASE WHEN A.DATA_TYPE = 'REF' THEN ' ref ' END
                             || CASE WHEN (S.SYNONYM_NAME IS NULL OR A.TYPE_OBJECT_TYPE = 'PACKAGE')
                             	AND TYPE_OWNER NOT IN (p_Dest_Schema, 'PUBLIC') THEN TYPE_OWNER||'.' END 
                             || A.TYPE_NAME 
                             || CASE WHEN A.TYPE_SUBNAME IS NOT NULL THEN '.'||A.TYPE_SUBNAME END 
+                        WHEN A.DATA_TYPE = 'REF CURSOR' THEN 'SYS_REFCURSOR' 
                         ELSE 
                             A.PLS_TYPE 
                         END RETURN_TYPE,
@@ -1965,28 +2001,33 @@ $END
 									end
 									|| ')'
                         		end
-                        		|| case when DATA_TYPE = 'PL/SQL TABLE' --  and ITEM_TYPE IS NOT NULL and RECORD_TYPE IS NOT NULL
+                        		|| case when DATA_TYPE = 'PL/SQL TABLE' 
                         			then ';'||chr(10)||chr(9)
                         				||'idx' || A.POSITION || ' ' || INDEX_BY
                         		end, ';'||chr(10)||chr(9)) WITHIN GROUP (ORDER BY POSITION) 
                         AS ARG_DECLARE_IN,
                         LISTAGG(case when ARG_PREFIX IS NOT NULL and IN_OUT IN ('IN/OUT', 'IN') then 
                          			case when DATA_TYPE = 'TABLE' and RECORD_TYPE IS NOT NULL -- and NESTED_TABLE = 'Y' 
+                         				or DATA_TYPE = 'VARRAY'
                          			then  
 										'FOR idx IN 1 .. ' || ARGUMENT_NAME || '.COUNT LOOP' || chr(10)||RPAD(' ', 8)
 										|| ARG_PREFIX || ARGUMENT_NAME || '(idx) := '
-										|| package_tracer.Get_Record_Fields (
-											p_Package_Name => PACKAGE_NAME,
-											p_Package_Owner => OWNER,
-											p_Type_Name => TYPE_NAME,
-											p_Type_Owner => TYPE_OWNER,
-											p_Type_Subname => TYPE_SUBNAME,
-											p_Variable_Name => ARGUMENT_NAME|| '(idx)',
-											p_Owner => TYPE_OWNER
-										)
+										|| case when RECORD_TYPE IS NOT NULL then 
+											package_tracer.Get_Record_Fields (
+												p_Package_Name => PACKAGE_NAME,
+												p_Package_Owner => OWNER,
+												p_Type_Name => TYPE_NAME,
+												p_Type_Owner => TYPE_OWNER,
+												p_Type_Subname => TYPE_SUBNAME,
+												p_Variable_Name => ARGUMENT_NAME|| '(idx)',
+												p_Owner => TYPE_OWNER
+											)
+											else 
+												ARGUMENT_NAME|| '(idx)'
+										end
 										|| ';' || chr(10)||RPAD(' ', 4)
 										|| 'END LOOP'
-									when DATA_TYPE = 'PL/SQL TABLE' --  and ITEM_TYPE IS NOT NULL and RECORD_TYPE IS NOT NULL
+									when DATA_TYPE = 'PL/SQL TABLE' 
 									then 
 										'idx' || A.POSITION || ' := ' || ARGUMENT_NAME || '.FIRST;' || chr(10)||RPAD(' ', 4)
 										|| 'WHILE idx' || A.POSITION || ' IS NOT NULL LOOP' || chr(10)||RPAD(' ', 8)
@@ -2001,15 +2042,14 @@ $END
 													p_Variable_Name => ARGUMENT_NAME|| '(idx' || A.POSITION || ')',
 													p_Owner => TYPE_OWNER
 												)
-												|| ';' 
 											else 
-												ARGUMENT_NAME|| '(idx' || A.POSITION || ');'
+												ARGUMENT_NAME|| '(idx' || A.POSITION || ')'
 										end
-										|| chr(10)||RPAD(' ', 8)
+										|| ';' || chr(10)||RPAD(' ', 8)
 										|| 'idx' || A.POSITION || ' := ' || ARGUMENT_NAME 
 										|| '.NEXT(idx' || A.POSITION || ');' || chr(10)||RPAD(' ', 4)
 										|| 'END LOOP'
-									when DATA_TYPE IN ('TABLE', 'VARRAY', 'PL/SQL TABLE', 'OBJECT') then
+									when DATA_TYPE IN ('TABLE', 'OBJECT') then
 										'select * bulk collect into ' || ARG_PREFIX || ARGUMENT_NAME
 										||' from table (' || ARGUMENT_NAME || ')' 
 									end
@@ -2029,21 +2069,27 @@ $END
 												p_Variable_Name => ARG_PREFIX|| ARGUMENT_NAME
 											)
 										|| ')'
-									when DATA_TYPE = 'TABLE' and RECORD_TYPE IS NOT NULL and NESTED_TABLE = 'Y' then
+									when DATA_TYPE = 'TABLE' and RECORD_TYPE IS NOT NULL -- and NESTED_TABLE = 'Y' 
+										or DATA_TYPE = 'VARRAY'
+									then
 										'FOR idx IN 1 .. ' || ARGUMENT_NAME || '.COUNT LOOP' || chr(10)||RPAD(' ', 8)
 										|| ARGUMENT_NAME || '(idx) := '
-										|| package_tracer.Get_Record_Fields (
-											p_Package_Name => PACKAGE_NAME,
-											p_Package_Owner => OWNER,
-											p_Type_Name => TYPE_NAME,
-											p_Type_Owner => TYPE_OWNER,
-											p_Type_Subname => TYPE_SUBNAME,
-											p_Variable_Name => ARG_PREFIX || ARGUMENT_NAME|| '(idx)'
-										)
+										|| case when RECORD_TYPE IS NOT NULL then 
+												package_tracer.Get_Record_Fields (
+													p_Package_Name => PACKAGE_NAME,
+													p_Package_Owner => OWNER,
+													p_Type_Name => TYPE_NAME,
+													p_Type_Owner => TYPE_OWNER,
+													p_Type_Subname => TYPE_SUBNAME,
+													p_Variable_Name => ARG_PREFIX || ARGUMENT_NAME|| '(idx)'
+												)
+											else 
+												ARG_PREFIX || ARGUMENT_NAME|| '(idx)'
+										end
 										|| ';' || chr(10)||RPAD(' ', 4)
 										|| 'END LOOP'
 									
-									when DATA_TYPE = 'PL/SQL TABLE' -- and ITEM_TYPE IS NOT NULL AND RECORD_TYPE IS NOT NULL 
+									when DATA_TYPE = 'PL/SQL TABLE' 
 									then 
 										'idx' || A.POSITION || ' := ' || ARG_PREFIX || ARGUMENT_NAME || '.FIRST;' || chr(10)||RPAD(' ', 4)
 										|| 'WHILE idx' || A.POSITION || ' IS NOT NULL LOOP' || chr(10)||RPAD(' ', 8)
@@ -2064,7 +2110,7 @@ $END
 										|| chr(10)||RPAD(' ', 8)
 										|| 'idx' || A.POSITION || ' := ' || ARG_PREFIX || ARGUMENT_NAME || '.NEXT(idx' || A.POSITION || ');' || chr(10)||RPAD(' ', 4)
 										|| 'END LOOP'									
-									when DATA_TYPE IN ('TABLE', 'VARRAY', 'PL/SQL TABLE', 'OBJECT') then
+									when DATA_TYPE IN ('TABLE', 'OBJECT') then
 										'select * bulk collect into ' || ARGUMENT_NAME
 										||' from table (' || ARG_PREFIX || ARGUMENT_NAME || ')' 
 									end
