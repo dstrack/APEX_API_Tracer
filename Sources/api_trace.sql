@@ -43,7 +43,8 @@ IS
         p_value_max_length INTEGER DEFAULT 1000,-- maximum length of an single procedure argument value in the log message
         p_bind_char VARCHAR2 DEFAULT ':',       -- optional bind char that will help to produce bind variables for use with EXECUTE IMMEDIATE
         p_overload INTEGER DEFAULT 0,           -- identifier of a overloded funtion in order of occurence.
-        p_in_out VARCHAR2 DEFAULT 'IN/OUT'      -- IN, OUT, IN/OUT. Used to filter the set of procedure arguments that are logged in the message.
+        p_in_out VARCHAR2 DEFAULT 'IN/OUT',     -- IN, OUT, IN/OUT. Used to filter the set of procedure arguments that are logged in the message.
+        p_return_variable VARCHAR2 DEFAULT NULL -- optional name of the variable containing the function result. Usually 'lv_result'
     ) RETURN VARCHAR2;
 
     /* build an pl/sql programm that captures the parameters of an package procedure or function for logging.
@@ -149,7 +150,8 @@ IS
         p_value_max_length INTEGER DEFAULT 1000,-- maximum length of an single procedure argument value in the log message
         p_bind_char VARCHAR2 DEFAULT ':',       -- optional bind char that will help to produce bind variables for use with EXECUTE IMMEDIATE
         p_overload INTEGER DEFAULT 0,           -- identifier of a overloded funtion in order of occurence.
-        p_in_out VARCHAR2 DEFAULT 'IN/OUT'      -- IN, OUT, IN/OUT. Used to filter the set of procedure arguments that are logged in the message.
+        p_in_out VARCHAR2 DEFAULT 'IN/OUT',     -- IN, OUT, IN/OUT. Used to filter the set of procedure arguments that are logged in the message.
+        p_return_variable VARCHAR2 DEFAULT NULL -- optional name of the variable containing the function result. Usually 'lv_result'
     ) RETURN VARCHAR2
     IS
 		$IF DBMS_DB_VERSION.VERSION >= 12 $THEN
@@ -159,8 +161,9 @@ IS
         c_argument_per_line CONSTANT PLS_INTEGER := 7;
         c_conop VARCHAR2(10) := ' || ';
         v_argument_name VARCHAR2(200);
-        v_offset NUMBER;
         v_result_str VARCHAR2(32767);
+        v_element_str VARCHAR2(32767);
+        v_returns_str VARCHAR2(32767);
         v_subprog VARCHAR2(32767);
         v_over  dbms_describe.number_table;
         v_posn  dbms_describe.number_table;
@@ -176,6 +179,46 @@ IS
         v_spare dbms_describe.number_table;
         v_idx   INTEGER := 0;
         v_count INTEGER := 0;
+        
+		FUNCTION Formatted_Name(p_arg_name VARCHAR2) RETURN VARCHAR2 
+		IS 
+			v_offset NUMBER;
+			v_result VARCHAR2(200);
+		BEGIN 
+			v_offset := INSTR(v_arg_name(v_idx), '_');
+			if v_offset > 0 then 
+				v_result := lower(substr(p_arg_name, 1, v_offset)) || initcap(substr(p_arg_name, v_offset+1));
+			else 
+				v_result := lower(p_arg_name);
+			end if;
+			RETURN v_result;
+		END;
+		FUNCTION Literal_Call (
+			p_Argument_Name VARCHAR2, 
+			p_Formatted_Name VARCHAR2,
+			p_Data_Type VARCHAR2
+		) RETURN VARCHAR2 
+		IS 
+		BEGIN 
+			RETURN case when v_dtyp(v_idx) IN (			-- Is_Printable_Type:
+					2,3, 1, 8, 11, 12, 23,          -- number, varchar,long,rowid,date, raw
+					96, 178,179,180,181,231,252,    -- char,timestamp, time, boolean
+					112, 113)                       -- clob, blob
+				then 
+					c_Package_Name || '.'
+					|| case when p_Argument_Name in ('P_PASSWORD', 'P_PASS', 'P_WALLET_PWD', 'P_WEB_PASSWORD', 'P_OLD_PASSWORD', 'P_NEW_PASSWORD')
+						then 'Literal_PWD'
+					when p_Data_Type = 23 
+						then 'Literal_RAW' 
+						else 'Literal' 
+					end
+					|| '(' || p_bind_char || p_Formatted_Name 
+					|| case when p_value_max_length != 1000 then ', ' || p_value_max_length end
+					|| ')'
+				else 
+					Literal('<datatype '||p_Data_Type||'>')
+			end;
+		END;
     BEGIN 
         dbms_describe.describe_procedure(
             object_name => p_calling_subprog, 
@@ -203,12 +246,7 @@ IS
             and v_arg_name(v_idx) IS NOT NULL 
             and (v_inout(v_idx) != 0 or p_in_out IN ('IN', 'IN/OUT')) then
             	v_count := v_count + 1;
-            	v_offset := INSTR(v_arg_name(v_idx), '_');
-            	if v_offset > 0 then 
-                	v_argument_name := lower(substr(v_arg_name(v_idx), 1, v_offset)) || initcap(substr(v_arg_name(v_idx), v_offset+1));
-                else 
-                	v_argument_name := lower(v_arg_name(v_idx));
-                end if;
+            	v_argument_name := Formatted_Name(v_arg_name(v_idx));
                 if v_result_str IS NOT NULL then 
                     v_result_str := v_result_str 
                     || case when mod(v_idx-1, c_argument_per_line) = 0 then c_conop || c_newline else chr(10) end
@@ -224,25 +262,24 @@ IS
                     || Literal(case when v_count > 1 then ', ' end
                     	|| v_argument_name || '=>') 
                     || c_conop
-                    || case when v_dtyp(v_idx) IN (			-- Is_Printable_Type:
-                            2,3, 1, 8, 11, 12, 23,          -- number, varchar,long,rowid,date, raw
-                            96, 178,179,180,181,231,252,    -- char,timestamp, time, boolean
-                            112, 113)                       -- clob, blob
-                        then 
-                            c_Package_Name || '.'
-                            || case when v_arg_name(v_idx) in ('P_PASSWORD', 'P_PASS', 'P_WALLET_PWD', 'P_WEB_PASSWORD', 'P_OLD_PASSWORD', 'P_NEW_PASSWORD')
-                            	then 'Literal_PWD'
-                            when v_dtyp(v_idx) = 23 
-                            	then 'Literal_RAW' 
-                            	else 'Literal' 
-                            end
-                            || '(' || p_bind_char || v_argument_name 
-                            || case when p_value_max_length != 1000 then ', ' || p_value_max_length end
-                            || ')'
-                        else 
-                            Literal('<datatype '||v_dtyp(v_idx)||'>')
-                    end;
+                    || Literal_Call (
+						p_Argument_Name => v_arg_name(v_idx), 
+						p_Formatted_Name => v_argument_name,
+						p_Data_Type => v_dtyp(v_idx)
+					);
                 end if;
+            elsif v_posn(v_idx) = 0
+            and v_arg_name(v_idx) IS NULL 
+            and p_return_variable IS NOT NULL then 
+            	v_returns_str := chr(10)
+				|| '    ' || c_conop
+				|| Literal(' Returns ') 
+				|| c_conop
+				|| Literal_Call (
+					p_Argument_Name => p_return_variable, 
+					p_Formatted_Name => Formatted_Name(p_return_variable),
+					p_Data_Type => v_dtyp(v_idx)
+				);
             end if;
         end loop;
         v_subprog := NVL( p_Synonym_Name, p_calling_subprog );
@@ -252,6 +289,7 @@ IS
         else 
             v_result_str := Literal(v_subprog);
         end if;
+        v_result_str := v_result_str || v_returns_str;
         RETURN v_result_str;
     END Format_Call_Parameter;
 

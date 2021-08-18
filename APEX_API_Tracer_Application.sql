@@ -27,7 +27,7 @@ prompt APPLICATION 103 - APEX API Tracer
 -- Application Export:
 --   Application:     103
 --   Name:            APEX API Tracer
---   Date and Time:   13:33 Tuesday August 17, 2021
+--   Date and Time:   22:56 Wednesday August 18, 2021
 --   Exported By:     DIRK
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -37,7 +37,7 @@ prompt APPLICATION 103 - APEX API Tracer
 
 -- Application Statistics:
 --   Pages:                      5
---     Items:                   28
+--     Items:                   29
 --     Computations:            14
 --     Processes:               16
 --     Regions:                 15
@@ -105,7 +105,7 @@ wwv_flow_api.create_flow(
 ,p_public_user=>'APEX_PUBLIC_USER'
 ,p_proxy_server=>nvl(wwv_flow_application_install.get_proxy,'')
 ,p_no_proxy_domains=>nvl(wwv_flow_application_install.get_no_proxy_domains,'')
-,p_flow_version=>'Release 1.2.5'
+,p_flow_version=>'Release 1.2.6'
 ,p_flow_status=>'AVAILABLE_W_EDIT_LINK'
 ,p_flow_unavailable_text=>'This application is currently unavailable at this time.'
 ,p_exact_substitutions_only=>'Y'
@@ -118,7 +118,7 @@ wwv_flow_api.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'APEX API Tracer'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210817130425'
+,p_last_upd_yyyymmddhh24miss=>'20210818225323'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>9
 ,p_ui_type_name => null
@@ -10178,7 +10178,7 @@ wwv_flow_api.create_page(
 ,p_page_template_options=>'#DEFAULT#'
 ,p_required_role=>'MUST_NOT_BE_PUBLIC_USER'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210817101444'
+,p_last_upd_yyyymmddhh24miss=>'20210818225323'
 );
 wwv_flow_api.create_page_plug(
  p_id=>wwv_flow_api.id(261514034487997802)
@@ -10371,7 +10371,7 @@ wwv_flow_api.create_worksheet_rpt(
 ,p_report_alias=>'2622133'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'SYNONYM_NAME:IS_ENABLED_SWITCH:ERROR_COUNT:GLOBAL_VARIABLES_COUNT:GRANT_STATS:REVOKE_STATS:SYNONYM_STATS:AFFECTED_OBJECTS:'
+,p_report_columns=>'SYNONYM_NAME:IS_ENABLED_SWITCH:ERROR_COUNT:GRANT_STATS:REVOKE_STATS:SYNONYM_STATS:AFFECTED_OBJECTS:'
 ,p_sort_column_1=>'SYNONYM_NAME'
 ,p_sort_direction_1=>'ASC'
 ,p_sort_column_2=>'0'
@@ -10414,7 +10414,7 @@ wwv_flow_api.create_report_region(
 'select Subprogram_Id, Procedure_Name, Logging_Call ',
 'from table(package_tracer.Dyn_Log_Call_List (',
 '    p_Package_Name=>:P1_PACKAGE_NAME, ',
-'    p_Dest_Schema=>:P1_SOURCE_SCHEMA,',
+'    p_Dest_Schema=>:P1_PACKAGE_OWNER,',
 '    p_Compact=>:P1_COMPACT,',
 '    p_Logging_Start_Enabled=>:P1_LOGGING_START,',
 '    p_Logging_Start_Call=>:P1_LOGGING_START_CALL,',
@@ -10431,7 +10431,7 @@ wwv_flow_api.create_report_region(
 ,p_display_when_cond2=>'LOCALE'
 ,p_display_condition_type=>'VAL_OF_ITEM_IN_COND_EQ_COND2'
 ,p_ajax_enabled=>'Y'
-,p_ajax_items_to_submit=>'P1_PACKAGE_NAME,P1_COMPACT,P1_LOGGING_START,P1_LOGGING_START_CALL,P1_LOGGING_FINISH_CALL,P1_LOGGING_API_CALL,P1_VARIABLE_NAME,P1_CONDITION_START,P1_CONDITION_END,P1_USE_CONDITION,P1_INDENT'
+,p_ajax_items_to_submit=>'P1_PACKAGE_NAME, P1_PACKAGE_OWNER,P1_COMPACT,P1_LOGGING_START,P1_LOGGING_START_CALL,P1_LOGGING_FINISH_CALL,P1_LOGGING_API_CALL,P1_VARIABLE_NAME,P1_CONDITION_START,P1_CONDITION_END,P1_USE_CONDITION,P1_INDENT'
 ,p_query_row_template=>wwv_flow_api.id(261870136694419236)
 ,p_query_num_rows=>100
 ,p_query_options=>'DERIVED_REPORT_COLUMNS'
@@ -10672,7 +10672,7 @@ wwv_flow_api.create_worksheet_rpt(
 ,p_report_alias=>'2620994'
 ,p_status=>'PUBLIC'
 ,p_is_default=>'Y'
-,p_report_columns=>'SYNONYM_NAME:IS_ENABLED_SWITCH:PACKAGE_OWNER:PACKAGE_NAME:ERROR_COUNT:GLOBAL_VARIABLES_COUNT:GRANT_STATS:REVOKE_STATS:SYNONYM_STATS:AFFECTED_OBJECTS:'
+,p_report_columns=>'SYNONYM_NAME:IS_ENABLED_SWITCH:PACKAGE_OWNER:PACKAGE_NAME:ERROR_COUNT:GRANT_STATS:REVOKE_STATS:SYNONYM_STATS:AFFECTED_OBJECTS:'
 ,p_sort_column_1=>'SYNONYM_NAME'
 ,p_sort_direction_1=>'ASC'
 ,p_sort_column_2=>'0'
@@ -10687,7 +10687,7 @@ wwv_flow_api.create_worksheet_rpt(
 ,p_sort_direction_6=>'ASC'
 );
 wwv_flow_api.create_worksheet_condition(
- p_id=>wwv_flow_api.id(263642783746250763)
+ p_id=>wwv_flow_api.id(263755260093002423)
 ,p_report_id=>wwv_flow_api.id(262099305494125632)
 ,p_condition_type=>'FILTER'
 ,p_allow_delete=>'Y'
@@ -11086,22 +11086,21 @@ wwv_flow_api.create_page_item(
 wwv_flow_api.create_page_item(
  p_id=>wwv_flow_api.id(261517315562997835)
 ,p_name=>'P1_PACKAGE_NAME'
-,p_item_sequence=>10
+,p_item_sequence=>20
 ,p_item_plug_id=>wwv_flow_api.id(261517272078997834)
 ,p_prompt=>'Package Name'
 ,p_display_as=>'NATIVE_POPUP_LOV'
 ,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'SELECT OBJ.OBJECT_NAME D, OBJ.OBJECT_NAME R',
-'FROM SYS.USER_OBJECTS OBJ',
-'WHERE OBJECT_TYPE = ''PACKAGE''',
-'AND NOT EXISTS (',
-'    SELECT 1 ',
-'    FROM SYS.ALL_SYNONYMS SYN ',
-'    WHERE SYN.SYNONYM_NAME = OBJ.OBJECT_NAME',
-'    AND SYN.OWNER  = ''PUBLIC''',
-')',
+'SELECT OBJ.OBJECT_NAME || '' (''||SYN.SYNONYM_NAME||'')'' D, ',
+'OBJ.OBJECT_NAME R',
+'FROM SYS.ALL_OBJECTS OBJ',
+'LEFT OUTER JOIN SYS.All_Synonyms SYN ON SYN.TABLE_NAME = OBJ.OBJECT_NAME and SYN.TABLE_OWNER = OBJ.OWNER',
+'WHERE OBJ.OBJECT_TYPE = ''PACKAGE''',
+'AND OBJ.OWNER = :P1_PACKAGE_OWNER',
 'ORDER BY 1'))
 ,p_lov_display_null=>'YES'
+,p_lov_cascade_parent_items=>'P1_PACKAGE_OWNER'
+,p_ajax_optimize_refresh=>'Y'
 ,p_cSize=>30
 ,p_colspan=>4
 ,p_field_template=>wwv_flow_api.id(261902054420419252)
@@ -11335,6 +11334,30 @@ wwv_flow_api.create_page_item(
 ,p_attribute_02=>'N'
 ,p_attribute_04=>'TEXT'
 ,p_attribute_05=>'NONE'
+);
+wwv_flow_api.create_page_item(
+ p_id=>wwv_flow_api.id(263069244611062043)
+,p_name=>'P1_PACKAGE_OWNER'
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_api.id(261517272078997834)
+,p_prompt=>'Package Owner'
+,p_source=>'APP_PARSING_SCHEMA'
+,p_source_type=>'ITEM'
+,p_display_as=>'NATIVE_POPUP_LOV'
+,p_lov=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'SELECT DISTINCT OBJ.OWNER D, OBJ.OWNER R',
+'FROM SYS.ALL_OBJECTS OBJ',
+'WHERE OBJECT_TYPE = ''PACKAGE''',
+'ORDER BY 1'))
+,p_lov_display_null=>'YES'
+,p_cSize=>30
+,p_colspan=>4
+,p_field_template=>wwv_flow_api.id(261902054420419252)
+,p_item_template_options=>'#DEFAULT#'
+,p_warn_on_unsaved_changes=>'I'
+,p_lov_display_extra=>'YES'
+,p_attribute_01=>'NOT_ENTERABLE'
+,p_attribute_02=>'FIRST_ROWSET'
 );
 wwv_flow_api.create_page_computation(
  p_id=>wwv_flow_api.id(261516984012997831)
@@ -12685,7 +12708,8 @@ wwv_flow_api.create_install_script(
 '        p_value_max_length INTEGER DEFAULT 1000,-- maximum length of an single procedure argument value in the log message',
 '        p_bind_char VARCHAR2 DEFAULT '':'',       -- optional bind char that will help to produce bind variables for use with EXECUTE IMMEDIATE',
 '        p_overload INTEGER DEFAULT 0,           -- identifier of a overloded funtion in order of occurence.',
-'        p_in_out VARCHAR2 DEFAULT ''IN/OUT''      -- IN, OUT, IN/OUT. Used to filter the set of procedure arguments that are logged in the message.',
+'        p_in_out VARCHAR2 DEFAULT ''IN/OUT'',     -- IN, OUT, IN/OUT. Used to filter the set of procedure arguments that are logged in the message.',
+'        p_return_variable VARCHAR2 DEFAULT NULL -- optional name of the variable containing the function result. Usually ''lv_result''',
 '    ) RETURN VARCHAR2;',
 '',
 '    /* build an pl/sql programm that captures the parameters of an package procedure or function for logging.',
@@ -12791,7 +12815,8 @@ wwv_flow_api.create_install_script(
 '        p_value_max_length INTEGER DEFAULT 1000,-- maximum length of an single procedure argument value in the log message',
 '        p_bind_char VARCHAR2 DEFAULT '':'',       -- optional bind char that will help to produce bind variables for use with EXECUTE IMMEDIATE',
 '        p_overload INTEGER DEFAULT 0,           -- identifier of a overloded funtion in order of occurence.',
-'        p_in_out VARCHAR2 DEFAULT ''IN/OUT''      -- IN, OUT, IN/OUT. Used to filter the set of procedure arguments that are logged in the message.',
+'        p_in_out VARCHAR2 DEFAULT ''IN/OUT'',     -- IN, OUT, IN/OUT. Used to filter the set of procedure arguments that are logged in the message.',
+'        p_return_variable VARCHAR2 DEFAULT NULL -- optional name of the variable containing the function result. Usually ''lv_result''',
 '    ) RETURN VARCHAR2',
 '    IS',
 '		$IF DBMS_DB_VERSION.VERSION >= 12 $THEN',
@@ -12801,8 +12826,9 @@ wwv_flow_api.create_install_script(
 '        c_argument_per_line CONSTANT PLS_INTEGER := 7;',
 '        c_conop VARCHAR2(10) := '' || '';',
 '        v_argument_name VARCHAR2(200);',
-'        v_offset NUMBER;',
 '        v_result_str VARCHAR2(32767);',
+'        v_element_str VARCHAR2(32767);',
+'        v_returns_str VARCHAR2(32767);',
 '        v_subprog VARCHAR2(32767);',
 '        v_over  dbms_describe.number_table;',
 '        v_posn  dbms_describe.number_table;',
@@ -12818,6 +12844,46 @@ wwv_flow_api.create_install_script(
 '        v_spare dbms_describe.number_table;',
 '        v_idx   INTEGER := 0;',
 '        v_count INTEGER := 0;',
+'        ',
+'		FUNCTION Formatted_Name(p_arg_name VARCHAR2) RETURN VARCHAR2 ',
+'		IS ',
+'			v_offset NUMBER;',
+'			v_result VARCHAR2(200);',
+'		BEGIN ',
+'			v_offset := INSTR(v_arg_name(v_idx), ''_'');',
+'			if v_offset > 0 then ',
+'				v_result := lower(substr(p_arg_name, 1, v_offset)) || initcap(substr(p_arg_name, v_offset+1));',
+'			else ',
+'				v_result := lower(p_arg_name);',
+'			end if;',
+'			RETURN v_result;',
+'		END;',
+'		FUNCTION Literal_Call (',
+'			p_Argument_Name VARCHAR2, ',
+'			p_Formatted_Name VARCHAR2,',
+'			p_Data_Type VARCHAR2',
+'		) RETURN VARCHAR2 ',
+'		IS ',
+'		BEGIN ',
+'			RETURN case when v_dtyp(v_idx) IN (			-- Is_Printable_Type:',
+'					2,3, 1, 8, 11, 12, 23,          -- number, varchar,long,rowid,date, raw',
+'					96, 178,179,180,181,231,252,    -- char,timestamp, time, boolean',
+'					112, 113)                       -- clob, blob',
+'				then ',
+'					c_Package_Name || ''.''',
+'					|| case when p_Argument_Name in (''P_PASSWORD'', ''P_PASS'', ''P_WALLET_PWD'', ''P_WEB_PASSWORD'', ''P_OLD_PASSWORD'', ''P_NEW_PASSWORD'')',
+'						then ''Literal_PWD''',
+'					when p_Data_Type = 23 ',
+'						then ''Literal_RAW'' ',
+'						else ''Literal'' ',
+'					end',
+'					|| ''('' || p_bind_char || p_Formatted_Name ',
+'					|| case when p_value_max_length != 1000 then '', '' || p_value_max_length end',
+'					|| '')''',
+'				else ',
+'					Literal(''<datatype ''||p_Data_Type||''>'')',
+'			end;',
+'		END;',
 '    BEGIN ',
 '        dbms_describe.describe_procedure(',
 '            object_name => p_calling_subprog, ',
@@ -12845,12 +12911,7 @@ wwv_flow_api.create_install_script(
 '            and v_arg_name(v_idx) IS NOT NULL ',
 '            and (v_inout(v_idx) != 0 or p_in_out IN (''IN'', ''IN/OUT'')) then',
 '            	v_count := v_count + 1;',
-'            	v_offset := INSTR(v_arg_name(v_idx), ''_'');',
-'            	if v_offset > 0 then ',
-'                	v_argument_name := lower(substr(v_arg_name(v_idx), 1, v_offset)) || initcap(substr(v_arg_name(v_idx), v_offset+1));',
-'                else ',
-'                	v_argument_name := lower(v_arg_name(v_idx));',
-'                end if;',
+'            	v_argument_name := Formatted_Name(v_arg_name(v_idx));',
 '                if v_result_str IS NOT NULL then ',
 '                    v_result_str := v_result_str ',
 '                    || case when mod(v_idx-1, c_argument_per_line) = 0 then c_conop || c_newline else chr(10) end',
@@ -12866,25 +12927,24 @@ wwv_flow_api.create_install_script(
 '                    || Literal(case when v_count > 1 then '', '' end',
 '                    	|| v_argument_name || ''=>'') ',
 '                    || c_conop',
-'                    || case when v_dtyp(v_idx) IN (			-- Is_Printable_Type:',
-'                            2,3, 1, 8, 11, 12, 23,          -- number, varchar,long,rowid,date, raw',
-'                            96, 178,179,180,181,231,252,    -- char,timestamp, time, boolean',
-'                            112, 113)                       -- clob, blob',
-'                        then ',
-'                            c_Package_Name || ''.''',
-'                            || case when v_arg_name(v_idx) in (''P_PASSWORD'', ''P_PASS'', ''P_WALLET_PWD'', ''P_WEB_PASSWORD'', ''P_OLD_PASSWORD'', ''P_NEW_PASSWORD'')',
-'                            	then ''Literal_PWD''',
-'                            when v_dtyp(v_idx) = 23 ',
-'                            	then ''Literal_RAW'' ',
-'                            	else ''Literal'' ',
-'                            end',
-'                            || ''('' || p_bind_char || v_argument_name ',
-'                            || case when p_value_max_length != 1000 then '', '' || p_value_max_length end',
-'                            || '')''',
-'                        else ',
-'                            Literal(''<datatype ''||v_dtyp(v_idx)||''>'')',
-'                    end;',
+'                    || Literal_Call (',
+'						p_Argument_Name => v_arg_name(v_idx), ',
+'						p_Formatted_Name => v_argument_name,',
+'						p_Data_Type => v_dtyp(v_idx)',
+'					);',
 '                end if;',
+'            elsif v_posn(v_idx) = 0',
+'            and v_arg_name(v_idx) IS NULL ',
+'            and p_return_variable IS NOT NULL then ',
+'            	v_returns_str := chr(10)',
+'				|| ''    '' || c_conop',
+'				|| Literal('' Returns '') ',
+'				|| c_conop',
+'				|| Literal_Call (',
+'					p_Argument_Name => p_return_variable, ',
+'					p_Formatted_Name => Formatted_Name(p_return_variable),',
+'					p_Data_Type => v_dtyp(v_idx)',
+'				);',
 '            end if;',
 '        end loop;',
 '        v_subprog := NVL( p_Synonym_Name, p_calling_subprog );',
@@ -12894,6 +12954,7 @@ wwv_flow_api.create_install_script(
 '        else ',
 '            v_result_str := Literal(v_subprog);',
 '        end if;',
+'        v_result_str := v_result_str || v_returns_str;',
 '        RETURN v_result_str;',
 '    END Format_Call_Parameter;',
 '',
@@ -13160,7 +13221,16 @@ wwv_flow_api.create_install_script(
 '    c_APEX_Condition_End       CONSTANT VARCHAR2(1000) := ''end if;'';',
 '    c_Package_Name             CONSTANT VARCHAR2(128) := lower($$plsql_unit);',
 '    g_debug                    CONSTANT BOOLEAN := FALSE;',
+'    /* When packages use nested tables for arguments of there function and procedured,',
+'    	then this packages are filtered in the packages list.',
+'    */',
 '    g_Exclude_Nested_Tables    CONSTANT BOOLEAN := TRUE;',
+'    /* when the constant g_Use_Plscope_Settings is set to TRUE,  ',
+'    	information about the public variables of the package headers is collected.',
+'    	The Global_Variables_Count of the packages list is calculated ',
+'    	by assessing the view ALL_IDENTIFIERS. A package should have no Global Variables',
+'    	that your application is accessing.',
+'    */',
 '    g_Use_Plscope_Settings     CONSTANT BOOLEAN := FALSE;',
 '    ',
 '    TYPE rec_logging_calls IS RECORD (',
@@ -13279,7 +13349,9 @@ wwv_flow_api.create_install_script(
 '        p_Data_Type IN VARCHAR2 DEFAULT NULL,',
 '        p_Variable_Name IN VARCHAR2 DEFAULT ''lv_result''',
 '    ) RETURN VARCHAR2;',
-'',
+'    ',
+'	FUNCTION NL(p_Indent PLS_INTEGER) RETURN VARCHAR2 DETERMINISTIC;',
+'	FUNCTION INDENT(p_Text VARCHAR2, p_Indent PLS_INTEGER) RETURN VARCHAR2 DETERMINISTIC;',
 '    -- helper query for listing the procedures with parameters of a package',
 '    FUNCTION Dyn_Log_Call_List (',
 '        p_Package_Name IN VARCHAR2,',
@@ -13437,13 +13509,14 @@ wwv_flow_api.create_install_script(
 '    join SYS.All_Objects OBJ on SYN.TABLE_NAME = OBJ.OBJECT_NAME and SYN.TABLE_OWNER = OBJ.OWNER',
 '    where Syn.OWNER IN (''PUBLIC'', SYS_CONTEXT(''USERENV'', ''CURRENT_SCHEMA'') )',
 '    and OBJ.OBJECT_TYPE = ''PACKAGE''',
-'    UNION -- local packages',
+'/*    UNION -- local packages',
+'	-- currently not used',
 '    select distinct',
 '        OBJ.OWNER     		 Package_Owner,',
 '        OBJ.OBJECT_NAME      Package_Name',
 '    from SYS.All_Objects OBJ ',
 '    where OBJ.OWNER = SYS_CONTEXT(''USERENV'', ''CURRENT_SCHEMA'')',
-'    and OBJ.OBJECT_TYPE = ''PACKAGE''',
+'    and OBJ.OBJECT_TYPE = ''PACKAGE'' */',
 ') A, table(package_tracer.Pipe_Record_types(p_Package_Name=>A.PACKAGE_NAME, p_Package_Owner=>A.PACKAGE_OWNER)) T',
 ';',
 '',
@@ -13718,7 +13791,7 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '                SYNONYM_STATS,',
 '                AFFECTED_OBJECTS,',
 '				(SELECT COUNT(*)',
-'					from ALL_IDENTIFIERS AI',
+'					from SYS.ALL_IDENTIFIERS AI',
 '					where not(AI.owner = ''SYS'' and AI.object_name in (''STANDARD'',''DBMS_STANDARD''))',
 '					and AI.Object_Type = ''PACKAGE''',
 '					and AI.Usage = ''DECLARATION''',
@@ -13748,7 +13821,15 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '                    TO_CLOB(NULL) REVOKE_STATS, ',
 '                    TO_CLOB(''CREATE OR REPLACE '' || SYNONYM_STATS || '';'') SYNONYM_STATS',
 '                FROM (',
-'                    SELECT DEP.NAME SYNONYM_NAME, ',
+'                    SELECT DEP.NAME SYN'))
+);
+end;
+/
+begin
+wwv_flow_api.append_to_install_script(
+ p_id=>wwv_flow_api.id(261939746109436819)
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'ONYM_NAME, ',
 '                            DEP.REFERENCED_NAME PACKAGE_NAME,',
 '                            DEP.REFERENCED_OWNER PACKAGE_OWNER,',
 '                            package_tracer.Get_Package_Synonym_Text(DEP.REFERENCED_NAME) SYNONYM_STATS',
@@ -13762,15 +13843,7 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '                AND INSTR(SYNONYM_STATS,''PUBLIC'') != 1',
 '',
 '          ) MAIN',
-'		  LEFT OUTER JOIN CONFLICTING_Q'))
-);
-end;
-/
-begin
-wwv_flow_api.append_to_install_script(
- p_id=>wwv_flow_api.id(261939746109436819)
-,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-' CF ON CF.OWNER = MAIN.PACKAGE_OWNER AND CF.TYPE_NAME = MAIN.PACKAGE_NAME',
+'		  LEFT OUTER JOIN CONFLICTING_Q CF ON CF.OWNER = MAIN.PACKAGE_OWNER AND CF.TYPE_NAME = MAIN.PACKAGE_NAME',
 '        ) loop ',
 '            pipe row (cur);',
 '        end loop;',
@@ -13873,7 +13946,7 @@ wwv_flow_api.append_to_install_script(
 '                GRANT_STATS, REVOKE_STATS, SYNONYM_STATS,',
 '                AFFECTED_OBJECTS,                ',
 '				(SELECT COUNT(*)',
-'					from ALL_IDENTIFIERS AI',
+'					from SYS.ALL_IDENTIFIERS AI',
 '					where not(AI.owner = ''SYS'' and AI.object_name in (''STANDARD'',''DBMS_STANDARD''))',
 '					and AI.Object_Type = ''PACKAGE''',
 '					and AI.Usage = ''DECLARATION''',
@@ -14347,7 +14420,33 @@ wwv_flow_api.append_to_install_script(
 '        end;',
 '    END Format_Return_Value;',
 '    ',
-'    FUNCTION Dyn_Log_Call_List (',
+'	FUNCTION NL(p_Indent PLS_INTEGER) RETURN VARCHAR2 DETERMINISTIC',
+'	is',
+'        $IF DBMS_DB_VERSION.VERSION >= 12 $THEN',
+'            PRAGMA UDF;',
+'        $END',
+'	begin',
+'		return chr(10) || RPAD('' '', p_Indent);',
+'	end NL;',
+'    FUNCTION INDENT(p_Text VARCHAR2, p_Indent PLS_INTEGER) RETURN VARCHAR2 DETERMINISTIC',
+'	is',
+'        $IF DBMS_DB_VERSION.VERSION >= 12 $THEN',
+'            PRAGMA UDF;',
+'        $END',
+'	begin',
+'		return replace(chr(10)||replace(p_Text, chr(9), ''    ''), chr(10), NL(p_Indent));',
+'	end INDENT;',
+'    ',
+'    F'))
+);
+null;
+end;
+/
+begin
+wwv_flow_api.append_to_install_script(
+ p_id=>wwv_flow_api.id(261939746109436819)
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'UNCTION Dyn_Log_Call_List (',
 '        p_Package_Name IN VARCHAR2,',
 '        p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT(''USERENV'', ''CURRENT_SCHEMA''),',
 '        p_Compact IN VARCHAR2 DEFAULT ''Y'', --Y/N',
@@ -14363,166 +14462,218 @@ wwv_flow_api.append_to_install_script(
 '    )',
 '    RETURN tab_logging_calls PIPELINED',
 '    IS',
-'        v_Synonym_Name VARCHAR2(128) := UPPER(p_Package_Name);',
-'        v_Synonym_Owner VARCHAR2(128);',
-'        v_Package_Name_Out VARCHAR2(128);',
-'        v_Package_Owner_Out VARCHAR2(128);',
-'        v_DBLink VARCHAR2(128);',
-'        v_Object_Type_Out SYS.ALL_OBJECTS.OBJECT_TYPE%TYPE;',
-'        v_Editionable_Out SYS.ALL_OBJECTS.OBJECT_TYPE%TYPE;',
-'   '))
-);
-null;
-end;
-/
-begin
-wwv_flow_api.append_to_install_script(
- p_id=>wwv_flow_api.id(261939746109436819)
-,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'     v_Condition_Start CONSTANT VARCHAR2(1000) := case when p_Condition_Start IS NOT NULL and p_Condition_Enabled = ''Y'' then chr(10) || rpad('' '', p_Indent) || p_Condition_Start end;',
-'        v_Condition_End CONSTANT VARCHAR2(1000) := case when p_Condition_End IS NOT NULL and p_Condition_Enabled = ''Y'' then chr(10) || rpad('' '', p_Indent) || p_Condition_End || chr(10) end;',
+'        v_Package_Name VARCHAR2(128) := UPPER(p_Package_Name);',
+'        v_Package_Owner VARCHAR2(128) := p_Dest_Schema;',
+'        v_Begin CONSTANT VARCHAR2(1000) := NL(p_Indent) || ''begin'';',
+'        v_End CONSTANT VARCHAR2(1000) := NL(p_Indent) || ''end;'';',
+'        v_Condition_Start CONSTANT VARCHAR2(1000) := case when p_Condition_Start IS NOT NULL and p_Condition_Enabled = ''Y'' then NL(p_Indent + 4) || p_Condition_Start end;',
+'        v_Condition_End CONSTANT VARCHAR2(1000) := case when p_Condition_End IS NOT NULL and p_Condition_Enabled = ''Y'' then NL(p_Indent + 4) || p_Condition_End end;',
+'		v_Indent NUMBER := case when v_Condition_End IS NOT NULL then p_Indent + 8 ELSE p_Indent + 4 end;',
+'        v_Header CLOB;',
 '        ',
 '        CURSOR all_proc_cur',
 '        IS',
-'        WITH PARAM_Q AS (',
-'            SELECT PACKAGE_NAME, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD,',
-'                INITCAP(PACKAGE_NAME) || ''.'' || INITCAP(OBJECT_NAME) CALLING_SUBPROG, ',
-'                LISTAGG(LOWER(ARGUMENT_NAME) , '','') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST,',
-'                LISTAGG(CASE WHEN IN_OUT IN (''IN/OUT'', ''IN'') THEN LOWER(ARGUMENT_NAME) END, '','') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_IN,',
-'                LISTAGG(CASE WHEN IN_OUT IN (''IN/OUT'', ''OUT'') THEN LOWER(ARGUMENT_NAME) END, '','') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_OUT,',
-'                SUM(CASE WHEN IN_OUT IN (''IN/OUT'', ''OUT'') AND ARGUMENT_NAME IS NOT NULL THEN 1 ELSE 0 END) OUT_COUNT,',
-'                MAX(CASE WHEN IN_OUT = ''OUT'' AND ARGUMENT_NAME IS NULL THEN PLS_TYPE END) RETURN_PLS_TYPE,',
-'                MAX(CASE WHEN IN_OUT = ''OUT'' AND ARGUMENT_NAME IS NULL THEN DATA_TYPE END) RETURN_DATA_TYPE',
-'            FROM SYS.ALL_ARGUMENTS ',
-'            WHERE PACKAGE_NAME = v_Package_Name_Out',
-'            AND OWNER = v_Package_Owner_Out',
-'            AND (Is_Printable_Type(PLS_TYPE) = ''YES'' or ARGUMENT_NAME IS NULL)',
-'            GROUP BY PACKAGE_NAME, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD',
+'        WITH RETURN_Q AS (',
+'        	SELECT A.PACKAGE_NAME, A.OWNER, A.OBJECT_NAME PROCEDURE_NAME, A.SUBPROGRAM_ID, A.IN_OUT,',
+'                PLS_TYPE RETURN_PLS_TYPE,',
+'                DATA_TYPE RETURN_DATA_TYPE,',
+'				CASE WHEN A.TYPE_NAME IS NOT NULL THEN ',
+'					CASE WHEN A.DATA_TYPE = ''REF'' THEN '' ref '' END',
+'					|| CASE WHEN (S.SYNONYM_NAME IS NULL OR A.TYPE_OBJECT_TYPE = ''PACKAGE'')',
+'						AND TYPE_OWNER NOT IN (v_Package_Owner, ''PUBLIC'') THEN TYPE_OWNER||''.'' END ',
+'					|| A.TYPE_NAME ',
+'					|| CASE WHEN A.TYPE_SUBNAME IS NOT NULL THEN ''.''||A.TYPE_SUBNAME END ',
+'				WHEN A.DATA_TYPE = ''REF CURSOR'' THEN ''SYS_REFCURSOR'' ',
+'				ELSE ',
+'					A.PLS_TYPE ',
+'				END ',
+'				|| case when A.CHAR_USED != ''0'' or A.PLS_TYPE = ''RAW'' ',
+'					then ''(32767)'' ',
+'				end RETURN_TYPE',
+'        	FROM SYS.ALL_ARGUMENTS A',
+'			LEFT OUTER JOIN SYS.All_Synonyms S ',
+'				ON S.SYNONYM_NAME = A.TYPE_NAME',
+'				AND S.OWNER IN (v_Package_Owner, ''PUBLIC'') -- important',
+'				AND S.TABLE_NAME = A.TYPE_NAME',
+'            WHERE DATA_LEVEL = 0              ',
+'            AND POSITION = 0',
+'        	AND ARGUMENT_NAME IS NULL',
+'        ), ARGUMENTS_Q AS (',
+'            SELECT PACKAGE_NAME, OWNER, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD,',
+'                LISTAGG(PRINT_ARGUMENT_NAME , '','') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST,',
+'                LISTAGG(CASE WHEN IN_OUT IN (''IN/OUT'', ''IN'') THEN PRINT_ARGUMENT_NAME END, '','') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_IN,',
+'                LISTAGG(CASE WHEN IN_OUT IN (''IN/OUT'', ''OUT'') THEN PRINT_ARGUMENT_NAME END, '','') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_OUT,',
+'                COUNT(DISTINCT CASE WHEN IN_OUT IN (''IN/OUT'', ''OUT'') THEN PRINT_ARGUMENT_NAME END) OUT_COUNT,',
+'                COUNT(*) ARGS_COUNT',
+'            FROM (',
+'            	SELECT PACKAGE_NAME, OWNER, OBJECT_NAME, SUBPROGRAM_ID, ',
+'            		OVERLOAD, IN_OUT, SEQUENCE, ARGUMENT_NAME,',
+'            		CASE WHEN package_tracer.Is_Printable_Type(A.PLS_TYPE) = ''YES'' THEN ',
+'            			LOWER(ARGUMENT_NAME)',
+'            		END PRINT_ARGUMENT_NAME',
+'				FROM SYS.ALL_ARGUMENTS A',
+'				WHERE DATA_LEVEL = 0 ',
+'				AND POSITION > 0 ',
+'				AND ARGUMENT_NAME IS NOT NULL',
+'			)',
+'            GROUP BY PACKAGE_NAME, OWNER, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD',
 '        )',
-'        SELECT PACKAGE_NAME, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD,',
-'            INITCAP(OBJECT_NAME) PROCEDURE_NAME, ',
-'            CASE WHEN p_Compact = ''Y'' and p_Logging_Start_Enabled = ''Y'' THEN ',
+'        SELECT PRO.OBJECT_NAME PACKAGE_NAME, ',
+'        	PRO.PROCEDURE_NAME OBJECT_NAME, ',
+'        	PRO.SUBPROGRAM_ID, PRO.OVERLOAD,',
+'            INITCAP(PRO.PROCEDURE_NAME) PROCEDURE_NAME, ',
+'			INDENT(HEADER||chr(10), p_Indent)',
+'			|| ''is'' ',
+'            || CASE WHEN p_Compact = ''Y'' and p_Logging_Start_Enabled = ''Y'' THEN ',
 '                v_Condition_Start',
-'                || chr(10)',
-'                || rpad('' '', p_Indent+4)',
+'                || NL(v_Indent)',
 '                || ''EXECUTE IMMEDIATE api_trace.Dyn_Log_Start''',
-'                || case when OVERLOAD is not null then ''(p_overload => '' || OVERLOAD || '')'' end',
+'                || case when PRO.OVERLOAD is not null then ''(p_overload => '' || PRO.OVERLOAD || '')'' end',
 '                || case when PARAM_LIST_IN IS NOT NULL then ',
-'                    chr(10) ',
-'                    || rpad('' '', p_Indent+4)',
+'                    NL(v_Indent)',
 '                    || ''USING ''',
 '                    || PARAM_LIST_IN',
 '                end',
 '                || '';'' ',
 '                || v_Condition_End',
-'                || chr(10) || ''----'' || chr(10) ',
+'                || NL(p_Indent + 4) || ''----'' ',
 '                || v_Condition_Start',
-'                || chr(10)',
-'                || rpad('' '', p_Indent+4)',
+'                || NL(v_Indent)',
 '                || ''EXECUTE IMMEDIATE api_trace.Dyn_Log_Exit''',
-'                || case when OVERLOAD is not null then ''(p_overload => '' || OVERLOAD || '')'' end',
+'                || case when PRO.OVERLOAD is not null then ''(p_overload => '' || PRO.OVERLOAD || '')'' end',
 '                || case when PARAM_LIST_OUT IS NOT NULL then ',
-'                    chr(10) ',
-'                    || rpad('' '', p_Indent+4)',
+'                    NL(v_Indent)',
 '                    || ''USING ''',
 '                    || PARAM_LIST_OUT',
 '                end',
 '                || '';'' ',
 '                || v_Condition_End',
+'                || v_End',
 '            WHEN p_Compact = ''Y'' and p_Logging_Start_Enabled = ''N'' THEN ',
-'                v_Condition_Start',
-'                || chr(10)',
-'                || rpad('' '', p_Indent+4)',
+'                NL(p_Indent + 4) || ''----'' ',
+'                || v_Condition_Start',
+'                || NL(v_Indent)',
 '                || ''EXECUTE IMMEDIATE api_trace.Dyn_Log_Call''',
-'                || case when OVERLOAD is not null then ''(p_overload => '' || OVERLOAD || '')'' end',
+'                || case when PRO.OVERLOAD is not null then ''(p_overload => '' || PRO.OVERLOAD || '')'' end',
 '                || case when PARAM_LIST IS NOT NULL then ',
-'                    chr(10) ',
-'                    || rpad('' '', p_Indent+4)',
+'                    NL(v_Indent)',
 '                    || ''USING ''',
 '                    || PARAM_LIST',
 '                end',
 '                || '';'' ',
 '                || v_Condition_End',
+'                || v_End',
 '            WHEN p_Compact = ''N'' and p_Logging_Start_Enabled = ''Y'' THEN ',
-'                v_Condition_Start',
-'                || replace(chr(10)||replace(',
+'            	case when RETURN_TYPE IS NOT NULL then ',
+'            		NL(p_Indent + 4) || p_Variable_Name || '' '' || RETURN_TYPE || '';''',
+'            	end',
+'            	|| v_Begin',
+'                || v_Condition_Start',
+'                || INDENT(replace(',
 '                	p_Logging_Start_Call, ''%s'',',
 '                    api_trace.Format_Call_Parameter(',
 '                        p_calling_subprog => CALLING_SUBPROG,',
 '                        p_bind_char => null,',
-'                        p_overload => OVERLOAD,',
+'                        p_overload => PRO.OVERLOAD,',
 '                        p_in_out => ''IN''',
 '                    )',
-'                ), chr(10), chr(10) || rpad('' '', p_Indent))',
+'                ), v_Indent)',
 '                || v_Condition_End',
-'                || chr(10) || ''----'' || chr(10) ',
+'                || NL(p_Indent + 4) || ''----'' ',
 '                || v_Condition_Start',
-'                || replace(chr(10) || replace(',
+'                || INDENT(replace(',
 '                    p_Logging_Finish_Call, ''%s'',',
-'                    case when OUT_COUNT > 0 then ',
-'                        api_trace.Format_Call_Parameter(',
-'                            p_calling_subprog => CALLING_SUBPROG,',
-'                            p_synonym_name => INITCAP(OBJECT_NAME) || '' output '',',
-'                            p_bind_char => null,',
-'                            p_overload => OVERLOAD,',
-'                            p_in_out => ''OUT''',
-'                        )',
-'                    end ',
-'                    || case when RETURN_PLS_TYPE IS NOT NULL',
-'                    or RETURN_DATA_TYPE IS NOT NULL then ',
-'                        Format_Return_Value(',
-'                            p_Procedure_Name => CALLING_SUBPROG,',
-'                            p_PLS_Type => RETURN_PLS_TYPE, -- returning data type',
-'                            p_Data_Type => RETURN_DATA_TYPE,',
-'                            p_Variable_Name => p_Variable_Name',
-'                        )',
-'                    end',
-'                    || case when not(OUT_COUNT > 0 ',
-'                    		or RETURN_PLS_TYPE IS NOT NULL',
-'                    		or RETURN_DATA_TYPE IS NOT NULL) then',
-'                        api_trace.Literal(CALLING_SUBPROG)',
-'                    end',
-'                ), chr(10), chr(10) || rpad('' '', p_Indent))',
-'                || v_Condition_End',
+'					api_trace.Format_Call_Parameter(',
+'						p_calling_subprog => CALLING_SUBPROG,',
+'						p_bind_char => null,',
+'						p_overload => PRO.OVERLOAD,',
+'						p_in_out => ''OUT'', ',
+'						p_return_variable => ',
+'							case when Is_Printable_Type(RETURN_PLS_TYPE) = ''YES'' ',
+'							then p_Variable_Name end',
+'					)',
+'                ), v_Indent)',
+'                || v_Condition_End ',
+'            	|| case when RETURN_TYPE IS NOT NULL then ',
+'            		NL(p_Indent + 4) || ''return '' || p_Variable_Name || '';''',
+'            	end',
+'                || v_End',
 '            WHEN p_Compact = ''N'' and p_Logging_Start_Enabled = ''N'' THEN ',
-'                v_Condition_Start',
-'                || replace(chr(10) || replace(',
+'                case when RETURN_TYPE IS NOT NULL then ',
+'            		NL(p_Indent + 4) || p_Variable_Name || '' '' || RETURN_TYPE || '';''',
+'            	end',
+'            	|| v_Begin',
+'                || NL(p_Indent + 4) || ''----'' ',
+'                || v_Condition_Start',
+'                || INDENT(replace(',
 '                    p_Logging_API_Call, ''%s'',',
 '                    api_trace.Format_Call_Parameter(',
 '                        p_calling_subprog => CALLING_SUBPROG,',
 '                        p_bind_char => null,',
-'                        p_overload => OVERLOAD,',
-'                        p_in_out => ''IN/OUT''',
+'                        p_overload => PRO.OVERLOAD,',
+'                        p_in_out => ''IN/OUT'', ',
+'                        p_return_variable => ',
+'                        	case when Is_Printable_Type(RETURN_PLS_TYPE) = ''YES'' ',
+'							then p_Variable_Name end',
 '                    )',
-'                    || case when RETURN_PLS_TYPE IS NOT NULL ',
-'                    or RETURN_DATA_TYPE IS NOT NULL then ',
-'                        chr(10) || rpad('' '', 4) || '' || '' ',
-'                        || Format_Return_Value(',
-'                            p_Procedure_Name => null,',
-'                            p_PLS_Type => RETURN_PLS_TYPE, -- returning data type',
-'                            p_Data_Type => RETURN_DATA_TYPE,',
-'                            p_Variable_Name => p_Variable_Name',
-'                        )',
-'                    end',
-'                ), chr(10), chr(10) || rpad('' '', p_Indent))',
-'                || v_Condition_End',
+'                ), v_Indent)',
+'                || v_Condition_End ',
+'             	|| case when RETURN_TYPE IS NOT NULL then ',
+'            		NL(p_Indent + 4) || ''return '' || p_Variable_Name || '';''',
+'            	end',
+'               || v_End',
 '            END LOGGING_CALL',
-'        FROM PARAM_Q',
-'        ORDER BY PACKAGE_NAME,SUBPROGRAM_ID, OVERLOAD;',
+'		FROM (',
+'			SELECT PRO.OBJECT_NAME, ',
+'				PRO.OWNER, ',
+'				PRO.PROCEDURE_NAME, ',
+'				PRO.SUBPROGRAM_ID,',
+'				PRO.OVERLOAD,',
+'                REGEXP_SUBSTR (v_Header,  ',
+'					''(''',
+'					|| case when RET.IN_OUT = ''OUT'' then ''FUNCTION'' else ''PROCEDURE'' end',
+'					|| ''\s+''||PRO.PROCEDURE_NAME',
+'					|| case when ARG.ARGS_COUNT > 0 then ''\s*\(.+?\)'' end',
+'					|| case when RET.IN_OUT = ''OUT'' then ''\s*RETURN\s+.*?'' else ''\s*'' end',
+'					|| '');'',',
+'					1, ',
+'					DENSE_RANK() OVER (PARTITION BY PRO.PROCEDURE_NAME, RET.IN_OUT, SIGN(ARG.ARGS_COUNT) ORDER BY PRO.SUBPROGRAM_ID),',
+'					''in'', 1',
+'				) HEADER, -- find original procedure header with parameter default values',
+'				INITCAP(PRO.OBJECT_NAME) || ''.'' || INITCAP(PRO.PROCEDURE_NAME) CALLING_SUBPROG,',
+'                ARG.PARAM_LIST, ARG.PARAM_LIST_IN, ARG.PARAM_LIST_OUT, ARG.OUT_COUNT, ',
+'                RET.RETURN_PLS_TYPE, RET.RETURN_DATA_TYPE, ',
+'                case when PRO.PIPELINED = ''NO'' and PRO.AGGREGATE = ''NO'' ',
+'                	then RET.RETURN_TYPE ',
+'                end RETURN_TYPE',
+'			FROM SYS.ALL_PROCEDURES PRO',
+'			LEFT OUTER JOIN ARGUMENTS_Q ARG ',
+'					ON PRO.OBJECT_NAME = ARG.PACKAGE_NAME',
+'					AND PRO.OWNER = ARG.OWNER',
+'					AND PRO.PROCEDURE_NAME = ARG.OBJECT_NAME',
+'					AND PRO.SUBPROGRAM_ID = ARG.SUBPROGRAM_ID',
+'			LEFT OUTER JOIN RETURN_Q RET -- get return type of functions ',
+'					ON PRO.OBJECT_NAME = RET.PACKAGE_NAME',
+'					AND PRO.OWNER = RET.OWNER',
+'					AND PRO.PROCEDURE_NAME = RET.PROCEDURE_NAME',
+'					AND PRO.SUBPROGRAM_ID = RET.SUBPROGRAM_ID',
+'			WHERE PRO.OBJECT_NAME = v_Package_Name',
+'			AND PRO.OWNER = v_Package_Owner',
+'			AND PRO.OBJECT_TYPE = ''PACKAGE''',
+'			AND PRO.PROCEDURE_NAME IS NOT NULL',
+'		) PRO',
+'        ORDER BY PRO.SUBPROGRAM_ID, PRO.OVERLOAD;',
 '',
 '        v_row rec_logging_calls;',
 '    BEGIN',
-'        Resolve_Synonym (',
-'            p_Synonym_Name => v_Synonym_Name,',
-'            p_Dest_Schema => p_Dest_Schema,',
-'            p_Dest_Object_Type => ''PACKAGE'',',
-'            p_Synonym_Owner => v_Synonym_Owner,',
-'            p_Package_Name => v_Package_Name_Out,',
-'            p_Package_Owner => v_Package_Owner_Out,',
-'            p_DBLink => v_DBLink,',
-'            p_Object_Type_Out => v_Object_Type_Out,',
-'            p_Editionable => v_Editionable_Out',
+'        dbms_lob.createtemporary(v_Header, true, dbms_lob.call);',
+'',
+'        v_Header := Get_Package_Source(',
+'            p_Package_Name => v_Package_Name,',
+'            p_Package_Owner => v_Package_Owner',
 '        );',
+'        -- remove PRAGMA clauses',
+'        v_Header := REGEXP_REPLACE(v_Header, ''PRAGMA\s+\w+\s*\(.+?\);'', '''', 1, 0, ''i'');',
 '        OPEN all_proc_cur;',
 '        LOOP',
 '            FETCH all_proc_cur INTO v_row;',
@@ -14997,7 +15148,16 @@ wwv_flow_api.append_to_install_script(
 '                            || CASE WHEN A.TYPE_SUBNAME IS NOT NULL THEN ''.''||A.TYPE_SUBNAME END ',
 '                        WHEN A.DATA_TYPE = ''REF CURSOR'' THEN ''SYS_REFCURSOR'' ',
 '                        ELSE ',
-'                            A.PLS_TYPE ',
+'             '))
+);
+null;
+end;
+/
+begin
+wwv_flow_api.append_to_install_script(
+ p_id=>wwv_flow_api.id(261939746109436819)
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'               A.PLS_TYPE ',
 '                        END RETURN_TYPE,',
 '                        A.TYPE_OBJECT_TYPE',
 '                FROM SYS.ALL_ARGUMENTS A',
@@ -15059,16 +15219,7 @@ wwv_flow_api.append_to_install_script(
 '												p_Owner => TYPE_OWNER',
 '											)',
 '											else ',
-'				'))
-);
-null;
-end;
-/
-begin
-wwv_flow_api.append_to_install_script(
- p_id=>wwv_flow_api.id(261939746109436819)
-,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'								ARGUMENT_NAME|| ''(idx)''',
+'												ARGUMENT_NAME|| ''(idx)''',
 '										end',
 '										|| '';'' || chr(10)||RPAD('' '', 4)',
 '										|| ''END LOOP''',
@@ -15345,7 +15496,7 @@ wwv_flow_api.append_to_install_script(
 '                        )',
 '                        || case when v_proc_tbl(ind).RETURN_PLS_TYPE IS NOT NULL ',
 '                        or v_proc_tbl(ind).TYPE_OBJECT_TYPE IS NOT NULL then ',
-'                            chr(10) || rpad('' '', 4) || '' || '' ',
+'                            NL(4) || '' || '' ',
 '                            || Format_Return_Value(',
 '                                p_Procedure_Name => null,',
 '                                p_PLS_Type => v_proc_tbl(ind).RETURN_PLS_TYPE, -- returning data type',
@@ -15553,7 +15704,16 @@ wwv_flow_api.append_to_install_script(
 '            p_Editionable => v_Editionable_Out',
 '        );',
 '        if g_debug then',
-'            Log_Elapsed_Time(v_Timemark, ''-- Resolve_Synonym '' || p_Dest_Schema || ''.'' || v_Synonym_Name || '' to '' || v_Package_Owner_Out || ''.'' || v_Package_Name_Out);    ',
+'            Log_Elapse'))
+);
+null;
+end;
+/
+begin
+wwv_flow_api.append_to_install_script(
+ p_id=>wwv_flow_api.id(261939746109436819)
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'d_Time(v_Timemark, ''-- Resolve_Synonym '' || p_Dest_Schema || ''.'' || v_Synonym_Name || '' to '' || v_Package_Owner_Out || ''.'' || v_Package_Name_Out);    ',
 '        end if;',
 '        if v_Package_Name_Out IS NULL then ',
 '            RAISE_APPLICATION_ERROR(-20001, ''The name '' || v_Synonym_Name || '' could not be found.'');',
@@ -15611,16 +15771,7 @@ unistr('            RAISE_APPLICATION_ERROR(-20003, ''The package '' || v_Synony
 '            ) DB ON DB.REFERENCED_NAME = DA.REFERENCED_NAME AND DB.REFERENCED_OWNER = DA.Owner ',
 '            WHERE DA.Owner = v_Package_Owner_Out ',
 '            AND DA.Name = v_Package_Name_Out ',
-'            AND'))
-);
-null;
-end;
-/
-begin
-wwv_flow_api.append_to_install_script(
- p_id=>wwv_flow_api.id(261939746109436819)
-,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-' (Syn.Owner IS NULL or Pri.Privilege IS NULL)',
+'            AND (Syn.Owner IS NULL or Pri.Privilege IS NULL)',
 '            AND NOT(DA.referenced_Owner = ''SYS'' AND DA.referenced_Name = ''STANDARD'')',
 '        ) LOOP ',
 '            if p_Use_Dbms_Output and c_cur.SYNONYM_STAT IS NOT NULL then',
