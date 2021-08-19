@@ -159,7 +159,7 @@ IS
         Subprogram_Id   SYS.ALL_ARGUMENTS.SUBPROGRAM_ID%TYPE, 
         Overload        SYS.ALL_ARGUMENTS.OVERLOAD%TYPE,
         Procedure_Name  VARCHAR2(512),
-        Logging_Call    VARCHAR2(32767)
+        Logging_Call    CLOB
     );
     TYPE tab_logging_calls IS TABLE OF rec_logging_calls;
     
@@ -246,7 +246,7 @@ IS
         p_Dest_Schema IN VARCHAR2 
     );
 
-    FUNCTION Is_Printable_Type (
+    FUNCTION Is_Printable_PLS_Type (
         p_PLS_Type IN VARCHAR2
     ) RETURN VARCHAR2 DETERMINISTIC;
 
@@ -260,12 +260,12 @@ IS
         p_value_max_length INTEGER DEFAULT 1000,
         p_bind_char VARCHAR2 DEFAULT ':',
         p_overload INTEGER DEFAULT 0,
-        p_in_out VARCHAR2 DEFAULT 'IN/OUT' -- IN, OUT, IN/OUT
+        p_in_out VARCHAR2 DEFAULT 'IN/OUT', -- IN, OUT, IN/OUT
+        p_return_variable VARCHAR2 DEFAULT NULL -- optional name of the variable containing the function result. Usually 'lv_result'
     ) RETURN VARCHAR2;
 
     FUNCTION Format_Return_Value (
         p_Procedure_Name IN VARCHAR2,
-        p_PLS_Type IN VARCHAR2,
         p_Data_Type IN VARCHAR2 DEFAULT NULL,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result'
     ) RETURN VARCHAR2;
@@ -1151,7 +1151,7 @@ $END
         end if;
     end Log_Elapsed_Time;
 
-    FUNCTION Is_Printable_Type (
+    FUNCTION Is_Printable_PLS_Type (
         p_PLS_Type IN VARCHAR2
     ) RETURN VARCHAR2 DETERMINISTIC 
     IS 
@@ -1163,9 +1163,23 @@ $END
                 'CHAR', 'CLOB', 'DATE', 'DOUBLE PRECISION', 'FLOAT', 'INTEGER', 'NUMBER', 'PLS_INTEGER', 'RAW', 'REAL', 
                 'ROWID', 'SMALLINT', 'TIME', 'TIME WITH TIME ZONE', 'TIMESTAMP', 'TIMESTAMP WITH LOCAL TIME ZONE', 
                 'TIMESTAMP WITH TIME ZONE', 'UROWID', 'VARCHAR2') then 'YES' else 'NO' end;
-    END Is_Printable_Type;
+    END Is_Printable_PLS_Type;
 
-    /* build an expression that captures the parameters of an package procedure for logging.
+     FUNCTION Is_Printable_DATA_Type (
+        p_Data_Type IN VARCHAR2
+    ) RETURN VARCHAR2 DETERMINISTIC 
+    IS 
+        $IF DBMS_DB_VERSION.VERSION >= 12 $THEN
+            PRAGMA UDF;
+        $END
+    BEGIN 
+        RETURN case when p_Data_Type IN ('BINARY_DOUBLE', 'BINARY_FLOAT', 'BINARY_INTEGER', 'BLOB',
+                'CHAR', 'CLOB', 'DATE', 'FLOAT', 'NCHAR', 'NCLOB', 'NUMBER', 'NVARCHAR2', 'RAW', 'REAL', 
+                'ROWID', 'TIME', 'TIME WITH TIME ZONE', 'TIMESTAMP', 'TIMESTAMP WITH LOCAL TIME ZONE', 
+                'TIMESTAMP WITH TIME ZONE', 'UROWID', 'VARCHAR2') then 'YES' else 'NO' end;
+    END Is_Printable_DATA_Type;
+
+   /* build an expression that captures the parameters of an package procedure for logging.
        execute with output: EXECUTE IMMEDIATE api_trace.Dyn_Log_Call(NULL) USING OUT v_log_message, IN <param...>
        execute with apex_debug: EXECUTE IMMEDIATE api_trace.Dyn_Log_Call USING <param...>
        the count of the arguments will be checked at runtime.
@@ -1180,20 +1194,64 @@ $END
         p_value_max_length INTEGER DEFAULT 1000,
         p_bind_char VARCHAR2 DEFAULT ':',
         p_overload INTEGER DEFAULT 0,
-        p_in_out VARCHAR2 DEFAULT 'IN/OUT' -- IN, OUT, IN/OUT
+        p_in_out VARCHAR2 DEFAULT 'IN/OUT', -- IN, OUT, IN/OUT
+        p_return_variable VARCHAR2 DEFAULT NULL -- optional name of the variable containing the function result. Usually 'lv_result'
     ) RETURN VARCHAR2
     IS
         $IF DBMS_DB_VERSION.VERSION >= 12 $THEN
             PRAGMA UDF;
         $END
-        c_newline VARCHAR2(10) := 'chr(10)'||chr(10);
+        c_newline CONSTANT VARCHAR2(10) := 'chr(10)'||chr(10);
         v_argument_per_line CONSTANT NUMBER := 7;
-        c_conop VARCHAR2(10) := ' || ';
+        c_conop CONSTANT VARCHAR2(10) := ' || ';
         v_argument_name VARCHAR2(200);
         v_offset NUMBER;
         v_result_str VARCHAR2(32767);
+        v_returns_str VARCHAR2(32767);
         v_subprog VARCHAR2(32767);
         v_count   INTEGER := 0;
+
+		FUNCTION Formatted_Name(p_arg_name VARCHAR2) RETURN VARCHAR2 
+		IS 
+			v_offset NUMBER;
+			v_result VARCHAR2(200);
+		BEGIN 
+			v_offset := INSTR(p_arg_name, '_');
+			if v_offset > 0 then 
+				v_result := lower(substr(p_arg_name, 1, v_offset)) || initcap(substr(p_arg_name, v_offset+1));
+			else 
+				v_result := lower(p_arg_name);
+			end if;
+			RETURN v_result;
+		END;
+		FUNCTION Literal_Call (
+			p_Argument_Name VARCHAR2, 
+			p_Formatted_Name VARCHAR2,
+			p_Data_Type VARCHAR2
+		) RETURN VARCHAR2 
+		IS 
+		BEGIN 
+			RETURN case when Is_Printable_DATA_Type(p_Data_Type) = 'YES' 
+				then 
+					'api_trace.'
+					|| case when p_Argument_Name in ('P_PASSWORD', 'P_PASS', 'P_WALLET_PWD', 'P_WEB_PASSWORD', 'P_OLD_PASSWORD', 'P_NEW_PASSWORD')
+						then 'Literal_PWD'
+					when p_Data_Type = 'RAW'
+						then 'Literal_RAW' 
+						else 'Literal' 
+					end
+					|| '(' || p_bind_char || p_Formatted_Name 
+					|| case when p_value_max_length != 1000 then ', ' || p_value_max_length end
+					|| ')'
+				when p_Data_Type IN ('TABLE', 'PL/SQL TABLE') -- Nested table type, Index-by (PL/SQL) table type
+				then 
+					p_bind_char || p_Formatted_Name 
+					|| '.COUNT || '
+            		|| Enquote_Literal(' rows ') 
+				else 
+					Enquote_Literal('<datatype '||p_Data_Type||'>')
+			end;
+		END;
    BEGIN 
         for c_cur in (
            SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID,
@@ -1204,20 +1262,14 @@ $END
             AND OBJECT_NAME = p_Procedure_Name
             AND SUBPROGRAM_ID = p_Subprogram_ID
             AND DATA_LEVEL = 0 
-            AND POSITION > 0 -- Position 0 returns the values for the return type of a function. 
-            AND ARGUMENT_NAME IS NOT NULL
             ORDER BY POSITION
         ) 
         loop 
             exit when length(v_result_str) > 32000; 
-            if (c_cur.IN_OUT != 'IN' or p_in_out IN ('IN', 'IN/OUT')) then
+            if (c_cur.IN_OUT != 'IN' or p_in_out IN ('IN', 'IN/OUT')) 
+            and c_cur.ARGUMENT_NAME IS NOT NULL then
                 v_count := v_count + 1;
-                v_offset := INSTR(c_cur.ARGUMENT_NAME, '_');
-                if v_offset > 0 then 
-                    v_argument_name := lower(substr(c_cur.ARGUMENT_NAME, 1, v_offset)) || initcap(substr(c_cur.ARGUMENT_NAME, v_offset+1));
-                else 
-                    v_argument_name := lower(c_cur.ARGUMENT_NAME);
-                end if;
+                v_argument_name := Formatted_Name(c_cur.ARGUMENT_NAME);
                 if v_result_str IS NOT NULL then 
                     v_result_str := v_result_str 
                     || case when mod(c_cur.POSITION-1, v_argument_per_line) = 0 then c_conop || c_newline else chr(10) end
@@ -1232,22 +1284,23 @@ $END
                     || Enquote_Literal(case when v_count > 1 then ', ' end
                         || v_argument_name || '=>') 
                     || c_conop
-                    || case when Is_Printable_Type(c_cur.PLS_TYPE) = 'YES'
-                        then 
-                            'api_trace.'
-                            || case when c_cur.ARGUMENT_NAME in ('P_PASSWORD', 'P_PASS', 'P_WALLET_PWD', 'P_WEB_PASSWORD', 'P_OLD_PASSWORD', 'P_NEW_PASSWORD')
-                            	then 'Literal_PWD'
-                            when c_cur.PLS_TYPE = 'RAW' 
-                            	then 'Literal_RAW' 
-                            	else 'Literal' 
-                            end
-                            || '(' || p_bind_char || v_argument_name 
-                            || case when p_value_max_length != 1000 then ', ' || p_value_max_length end
-                            || ')'
-                        else 
-                            Enquote_Literal('<datatype '||NVL(c_cur.PLS_TYPE, c_cur.DATA_TYPE)||'>')
-                    end;
+                    || Literal_Call (
+						p_Argument_Name => c_cur.ARGUMENT_NAME, 
+						p_Formatted_Name => v_argument_name,
+						p_Data_Type => c_cur.DATA_TYPE
+					);
                 end if;
+            elsif c_cur.ARGUMENT_NAME IS NULL 
+            and p_return_variable IS NOT NULL then 
+            	v_returns_str := chr(10)
+				|| '    ' || c_conop
+				|| Enquote_Literal(' Returns ') 
+				|| c_conop
+				|| Literal_Call (
+					p_Argument_Name => p_return_variable, 
+					p_Formatted_Name => Formatted_Name(p_return_variable),
+					p_Data_Type => c_cur.DATA_TYPE
+				);            
             end if;
         end loop;
         v_subprog := lower(case when p_Synonym_Name IS NOT NULL then p_Synonym_Name else p_calling_subprog end);
@@ -1257,7 +1310,7 @@ $END
         else 
             v_result_str := Enquote_Literal(v_subprog);
         end if;
-        RETURN v_result_str;
+        RETURN v_result_str || v_returns_str;
     END Format_Call_Parameter;
 
     PROCEDURE Resolve_Synonym (
@@ -1315,16 +1368,15 @@ $END
 
     FUNCTION Format_Return_Value (
         p_Procedure_Name IN VARCHAR2,
-        p_PLS_Type IN VARCHAR2,
         p_Data_Type IN VARCHAR2 DEFAULT NULL,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result'
     ) RETURN VARCHAR2 
     IS 
     BEGIN
         RETURN Enquote_Literal(p_Procedure_Name || ' returns ') 
-        || case when Is_Printable_Type(p_PLS_Type) = 'YES' then 
+        || case when Is_Printable_DATA_Type(p_Data_Type) = 'YES' then 
             ' || api_trace.'
-            || case when p_PLS_Type= 'RAW' then 'Literal_RAW' else 'Literal' end
+            || case when p_Data_Type = 'RAW' then 'Literal_RAW' else 'Literal' end
             || '(' || p_Variable_Name || ')'
         when p_Data_Type IN ('TABLE', 'PL/SQL TABLE') then 
             ' || ' || p_Variable_Name || '.COUNT || '
@@ -1411,7 +1463,7 @@ $END
             FROM (
             	SELECT PACKAGE_NAME, OWNER, OBJECT_NAME, SUBPROGRAM_ID, 
             		OVERLOAD, IN_OUT, SEQUENCE, ARGUMENT_NAME,
-            		CASE WHEN package_tracer.Is_Printable_Type(A.PLS_TYPE) = 'YES' THEN 
+            		CASE WHEN package_tracer.Is_Printable_PLS_Type(A.PLS_TYPE) = 'YES' THEN 
             			LOWER(ARGUMENT_NAME)
             		END PRINT_ARGUMENT_NAME
 				FROM SYS.ALL_ARGUMENTS A
@@ -1425,7 +1477,7 @@ $END
         	PRO.PROCEDURE_NAME OBJECT_NAME, 
         	PRO.SUBPROGRAM_ID, PRO.OVERLOAD,
             INITCAP(PRO.PROCEDURE_NAME) PROCEDURE_NAME, 
-			INDENT(HEADER||chr(10), p_Indent)
+			TO_CLOB(INDENT(HEADER||chr(10), p_Indent))
 			|| 'is' 
             || CASE WHEN p_Compact = 'Y' and p_Logging_Start_Enabled = 'Y' THEN 
                 v_Condition_Start
@@ -1468,14 +1520,20 @@ $END
                 || v_End
             WHEN p_Compact = 'N' and p_Logging_Start_Enabled = 'Y' THEN 
             	case when RETURN_TYPE IS NOT NULL then 
-            		NL(p_Indent + 4) || p_Variable_Name || ' ' || RETURN_TYPE || ';'
+            		NL(p_Indent + 4) || p_Variable_Name || ' ' || LOWER(RETURN_TYPE) || ';'
             	end
             	|| v_Begin
                 || v_Condition_Start
                 || INDENT(replace(
                 	p_Logging_Start_Call, '%s',
-                    api_trace.Format_Call_Parameter(
+                    Format_Call_Parameter(
+						p_Object_Name => v_Package_Name,
+						p_Object_Owner => v_Package_Owner,
+						p_Procedure_Name => PROCEDURE_NAME,
+						p_Subprogram_ID => SUBPROGRAM_ID,
+                            
                         p_calling_subprog => CALLING_SUBPROG,
+                        p_synonym_name => PACKAGE_PROCEDURE_NAME,
                         p_bind_char => null,
                         p_overload => PRO.OVERLOAD,
                         p_in_out => 'IN'
@@ -1486,13 +1544,19 @@ $END
                 || v_Condition_Start
                 || INDENT(replace(
                     p_Logging_Finish_Call, '%s',
-					api_trace.Format_Call_Parameter(
+					Format_Call_Parameter(
+						p_Object_Name => v_Package_Name,
+						p_Object_Owner => v_Package_Owner,
+						p_Procedure_Name => PROCEDURE_NAME,
+						p_Subprogram_ID => SUBPROGRAM_ID,
+                            
 						p_calling_subprog => CALLING_SUBPROG,
+                        p_synonym_name => PACKAGE_PROCEDURE_NAME,
 						p_bind_char => null,
 						p_overload => PRO.OVERLOAD,
 						p_in_out => 'OUT', 
 						p_return_variable => 
-							case when Is_Printable_Type(RETURN_PLS_TYPE) = 'YES' 
+							case when RETURN_TYPE IS NOT NULL
 							then p_Variable_Name end
 					)
                 ), v_Indent)
@@ -1503,20 +1567,26 @@ $END
                 || v_End
             WHEN p_Compact = 'N' and p_Logging_Start_Enabled = 'N' THEN 
                 case when RETURN_TYPE IS NOT NULL then 
-            		NL(p_Indent + 4) || p_Variable_Name || ' ' || RETURN_TYPE || ';'
+            		NL(p_Indent + 4) || p_Variable_Name || ' ' || LOWER(RETURN_TYPE) || ';'
             	end
             	|| v_Begin
                 || NL(p_Indent + 4) || '----' 
                 || v_Condition_Start
                 || INDENT(replace(
                     p_Logging_API_Call, '%s',
-                    api_trace.Format_Call_Parameter(
+                    Format_Call_Parameter(
+						p_Object_Name => v_Package_Name,
+						p_Object_Owner => v_Package_Owner,
+						p_Procedure_Name => PROCEDURE_NAME,
+						p_Subprogram_ID => SUBPROGRAM_ID,
+                            
                         p_calling_subprog => CALLING_SUBPROG,
+                        p_synonym_name => PACKAGE_PROCEDURE_NAME,
                         p_bind_char => null,
                         p_overload => PRO.OVERLOAD,
                         p_in_out => 'IN/OUT', 
                         p_return_variable => 
-                        	case when Is_Printable_Type(RETURN_PLS_TYPE) = 'YES' 
+                        	case when RETURN_TYPE IS NOT NULL
 							then p_Variable_Name end
                     )
                 ), v_Indent)
@@ -1532,6 +1602,7 @@ $END
 				PRO.PROCEDURE_NAME, 
 				PRO.SUBPROGRAM_ID,
 				PRO.OVERLOAD,
+				PRO.PIPELINED, PRO.AGGREGATE,
                 REGEXP_SUBSTR (v_Header,  
 					'('
 					|| case when RET.IN_OUT = 'OUT' then 'FUNCTION' else 'PROCEDURE' end
@@ -1543,12 +1614,11 @@ $END
 					DENSE_RANK() OVER (PARTITION BY PRO.PROCEDURE_NAME, RET.IN_OUT, SIGN(ARG.ARGS_COUNT) ORDER BY PRO.SUBPROGRAM_ID),
 					'in', 1
 				) HEADER, -- find original procedure header with parameter default values
-				INITCAP(PRO.OBJECT_NAME) || '.' || INITCAP(PRO.PROCEDURE_NAME) CALLING_SUBPROG,
+				PRO.OWNER || '.' || PRO.OBJECT_NAME || '.' || PRO.PROCEDURE_NAME CALLING_SUBPROG,
+				INITCAP(PRO.OBJECT_NAME) || '.' || INITCAP(PRO.PROCEDURE_NAME) PACKAGE_PROCEDURE_NAME,
                 ARG.PARAM_LIST, ARG.PARAM_LIST_IN, ARG.PARAM_LIST_OUT, ARG.OUT_COUNT, 
                 RET.RETURN_PLS_TYPE, RET.RETURN_DATA_TYPE, 
-                case when PRO.PIPELINED = 'NO' and PRO.AGGREGATE = 'NO' 
-                	then RET.RETURN_TYPE 
-                end RETURN_TYPE
+                RET.RETURN_TYPE
 			FROM SYS.ALL_PROCEDURES PRO
 			LEFT OUTER JOIN ARGUMENTS_Q ARG 
 					ON PRO.OBJECT_NAME = ARG.PACKAGE_NAME
@@ -1747,8 +1817,8 @@ $END
 		v_Index_by VARCHAR2(1000);
 		v_Item_Sequence PLS_INTEGER;
         v_Table_Pattern CONSTANT VARCHAR2(100) := '\s+TYPE\s+(\w+)\s+IS\s+TABLE\s+OF\s*(\S+)\s*;';
-        v_Varray_Pattern CONSTANT VARCHAR2(100) := '\s+TYPE\s+(\w+)\s+IS\s+VARRAY\s*(\S+)\s*OF\s+(\S+);';
-        v_PL_Table_Pattern CONSTANT VARCHAR2(100) := '\s+TYPE\s+(\w+)\s+IS\s+TABLE\s+OF\s*\((\S+)\)\s+INDEX BY\s+(\S+);';
+        v_Varray_Pattern CONSTANT VARCHAR2(100) := '\s+TYPE\s+(\w+)\s+IS\s+VARRAY\s*\((\S+)\)\s*OF\s+(\S+);';
+        v_PL_Table_Pattern CONSTANT VARCHAR2(100) := '\s+TYPE\s+(\w+)\s+IS\s+TABLE\s+OF\s*(\S+)\s+INDEX BY\s+(\S+);';
 		v_out_row rec_record_fields;
         v_Timemark NUMBER := dbms_utility.get_time;
         v_Offset PLS_INTEGER;
@@ -2040,7 +2110,7 @@ $END
                         A.TYPE_NAME RETURN_TYPE_NAME,
                         A.TYPE_OWNER RETURN_TYPE_OWNER,
                         A.TYPE_SUBNAME RETURN_TYPE_SUBNAME,
-                        T.INDEX_BY RETURN_IDX_TYPE,
+                        NVL(T.INDEX_BY, 'PLS_INTEGER') RETURN_IDX_TYPE,
                         T.RECORD_TYPE RETURN_RECORD_TYPE,
                         A.CHAR_USED,
                         CASE WHEN A.TYPE_NAME IS NOT NULL THEN 
@@ -2210,7 +2280,7 @@ $END
 					SELECT A.PACKAGE_NAME, A.OWNER, A.PROCEDURE_NAME, A.SUBPROGRAM_ID, 
 						A.ARGUMENT_NAME, A.DATA_TYPE, A.POSITION, A.TYPE_OWNER, A.TYPE_NAME, A.TYPE_SUBNAME, 
 						A.IN_OUT, A.ARGUMENT_TYPE, A.ARG_PREFIX, 
-						T.RECORD_TYPE, T.ITEM_TYPE, T.NESTED_TABLE, T.INDEX_BY
+						T.RECORD_TYPE, T.ITEM_TYPE, T.NESTED_TABLE, NVL(T.INDEX_BY, 'PLS_INTEGER') INDEX_BY
 					FROM (SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, 
 								LOWER(ARGUMENT_NAME) ARGUMENT_NAME,
 								DATA_TYPE, POSITION, TYPE_OWNER, TYPE_NAME, TYPE_SUBNAME, IN_OUT, 
@@ -2234,7 +2304,8 @@ $END
             SELECT PRO.PROCEDURE_NAME, 
                 PRO.SUBPROGRAM_ID, PRO.OVERLOAD,
                 PRO.AGGREGATE, PRO.PIPELINED, PRO.IMPLTYPEOWNER, PRO.IMPLTYPENAME,
-                RET.RETURN_TYPE, RET.TYPE_OBJECT_TYPE, 
+                RET.RETURN_TYPE,
+                RET.TYPE_OBJECT_TYPE, 
                 RET.RETURN_TYPE_NAME, RET.RETURN_TYPE_OWNER, RET.RETURN_TYPE_SUBNAME, 
                 RET.RETURN_IDX_TYPE, 
                 RET.RETURN_RECORD_TYPE, 
@@ -2341,35 +2412,22 @@ $END
                     v_trace_output := chr(9) 
                     || replace(
                         p_Logging_Finish_Call, '%s',
-                        case when v_proc_tbl(ind).OUT_COUNT > 0 then 
-                            Format_Call_Parameter( 
-                                p_Object_Name => p_Object_Name,
-                                p_Object_Owner => p_Object_Owner,
-                                p_Procedure_Name => v_proc_tbl(ind).PROCEDURE_NAME,
-                                p_Subprogram_ID => v_proc_tbl(ind).SUBPROGRAM_ID,
-                                p_calling_subprog => v_calling_subprog,
-                                p_synonym_name => v_procedure_name || ' output ',
-                                p_value_max_length => p_value_max_length,
-                                p_bind_char => null,
-                                p_overload => v_proc_tbl(ind).OVERLOAD,
-                                p_in_out => 'OUT'
-                            )
-                        end
-                        || case when v_proc_tbl(ind).RETURN_PLS_TYPE IS NOT NULL 
-                        or v_proc_tbl(ind).TYPE_OBJECT_TYPE IS NOT NULL then 
-                            Format_Return_Value(
-                                p_Procedure_Name => v_Procedure_Name,
-                                p_PLS_Type => v_proc_tbl(ind).RETURN_PLS_TYPE, -- returning data type
-                                p_Data_Type => v_proc_tbl(ind).RETURN_DATA_TYPE,
-                                p_Variable_Name => p_Variable_Name
-                            )
-                        end
-                        || case when v_proc_tbl(ind).OUT_COUNT = 0 
-                        and v_proc_tbl(ind).RETURN_PLS_TYPE IS NULL 
-                        and v_proc_tbl(ind).TYPE_OBJECT_TYPE IS NULL then
-                            api_trace.Literal(v_Procedure_Name)
-                        end
-                    ) || chr(10)
+						Format_Call_Parameter( 
+							p_Object_Name => p_Object_Name,
+							p_Object_Owner => p_Object_Owner,
+							p_Procedure_Name => v_proc_tbl(ind).PROCEDURE_NAME,
+							p_Subprogram_ID => v_proc_tbl(ind).SUBPROGRAM_ID,
+							p_calling_subprog => v_calling_subprog,
+							p_synonym_name => v_procedure_name,
+							p_value_max_length => p_value_max_length,
+							p_bind_char => null,
+							p_overload => v_proc_tbl(ind).OVERLOAD,
+							p_in_out => 'OUT',
+							p_return_variable => 
+								case when v_proc_tbl(ind).RETURN_TYPE IS NOT NULL
+								then p_Variable_Name end
+						)
+                     ) || chr(10)
                     || v_proc_tbl(ind).ARG_CONVERT_OUT;
                 ELSE 
                     v_trace_call := v_proc_tbl(ind).ARG_CONVERT_IN;
@@ -2386,18 +2444,11 @@ $END
                             p_value_max_length => p_value_max_length,
                             p_bind_char => null,
                             p_overload => v_proc_tbl(ind).OVERLOAD,
-                            p_in_out => 'IN/OUT'
+                            p_in_out => 'IN/OUT',
+							p_return_variable => 
+								case when v_proc_tbl(ind).RETURN_TYPE IS NOT NULL
+								then p_Variable_Name end
                         )
-                        || case when v_proc_tbl(ind).RETURN_PLS_TYPE IS NOT NULL 
-                        or v_proc_tbl(ind).TYPE_OBJECT_TYPE IS NOT NULL then 
-                            NL(4) || ' || ' 
-                            || Format_Return_Value(
-                                p_Procedure_Name => null,
-                                p_PLS_Type => v_proc_tbl(ind).RETURN_PLS_TYPE, -- returning data type
-                                p_Data_Type => v_proc_tbl(ind).RETURN_DATA_TYPE,
-                                p_Variable_Name => p_Variable_Name
-                            )
-                        end
                     ) || chr(10)
                     || v_proc_tbl(ind).ARG_CONVERT_OUT;                   
                 END IF;

@@ -38,7 +38,7 @@ IS
     RETURN VARCHAR2 DETERMINISTIC;
 
     FUNCTION Format_Call_Parameter(
-        p_calling_subprog VARCHAR2,             -- name of the called procedure or function in a package format: package_name.procedure_name
+        p_calling_subprog VARCHAR2,             -- name of the called procedure or function in a package format: owner.package_name.procedure_name
         p_synonym_name VARCHAR2 DEFAULT NULL,   -- optional name of the procedure in the log message
         p_value_max_length INTEGER DEFAULT 1000,-- maximum length of an single procedure argument value in the log message
         p_bind_char VARCHAR2 DEFAULT ':',       -- optional bind char that will help to produce bind variables for use with EXECUTE IMMEDIATE
@@ -157,9 +157,9 @@ IS
 		$IF DBMS_DB_VERSION.VERSION >= 12 $THEN
 			PRAGMA UDF;
 		$END
-        c_newline VARCHAR2(10) := 'chr(10)'||chr(10);
+        c_newline CONSTANT VARCHAR2(10) := 'chr(10)'||chr(10);
         c_argument_per_line CONSTANT PLS_INTEGER := 7;
-        c_conop VARCHAR2(10) := ' || ';
+        c_conop CONSTANT VARCHAR2(10) := ' || ';
         v_argument_name VARCHAR2(200);
         v_result_str VARCHAR2(32767);
         v_element_str VARCHAR2(32767);
@@ -196,11 +196,11 @@ IS
 		FUNCTION Literal_Call (
 			p_Argument_Name VARCHAR2, 
 			p_Formatted_Name VARCHAR2,
-			p_Data_Type VARCHAR2
+			p_Data_Type NUMBER
 		) RETURN VARCHAR2 
 		IS 
 		BEGIN 
-			RETURN case when v_dtyp(v_idx) IN (			-- Is_Printable_Type:
+			RETURN case when p_Data_Type IN (			-- Is_Printable_Type:
 					2,3, 1, 8, 11, 12, 23,          -- number, varchar,long,rowid,date, raw
 					96, 178,179,180,181,231,252,    -- char,timestamp, time, boolean
 					112, 113)                       -- clob, blob
@@ -215,6 +215,11 @@ IS
 					|| '(' || p_bind_char || p_Formatted_Name 
 					|| case when p_value_max_length != 1000 then ', ' || p_value_max_length end
 					|| ')'
+				when p_Data_Type IN (122, 251) -- Nested table type, Index-by (PL/SQL) table type
+				then 
+					p_bind_char || p_Formatted_Name 
+					|| '.COUNT || '
+            		|| Literal(' rows ') 
 				else 
 					Literal('<datatype '||p_Data_Type||'>')
 			end;
