@@ -186,7 +186,7 @@ IS
 			v_result VARCHAR2(200);
 		BEGIN 
 			v_offset := INSTR(v_arg_name(v_idx), '_');
-			if v_offset > 0 then 
+			if v_offset > 0 and v_offset < 4 then 
 				v_result := lower(substr(p_arg_name, 1, v_offset)) || initcap(substr(p_arg_name, v_offset+1));
 			else 
 				v_result := lower(p_arg_name);
@@ -200,9 +200,16 @@ IS
 		) RETURN VARCHAR2 
 		IS 
 		BEGIN 
-			RETURN case when p_Data_Type IN (			-- Is_Printable_Type:
+			RETURN case 
+				when p_Data_Type IN (122, 251, 123) -- Nested table type, Index-by (PL/SQL) table type, Variable array
+				then 
+					p_bind_char || p_Formatted_Name 
+					|| '.COUNT || '
+            		|| Literal(' rows') 
+				when p_Data_Type IN (			-- Is_Printable_Type:
 					2,3, 1, 8, 11, 12, 23,          -- number, varchar,long,rowid,date, raw
 					96, 178,179,180,181,231,252,    -- char,timestamp, time, boolean
+					182, 183,						-- interval year to month, interval day to second
 					112, 113)                       -- clob, blob
 				then 
 					c_Package_Name || '.'
@@ -215,11 +222,6 @@ IS
 					|| '(' || p_bind_char || p_Formatted_Name 
 					|| case when p_value_max_length != 1000 then ', ' || p_value_max_length end
 					|| ')'
-				when p_Data_Type IN (122, 251) -- Nested table type, Index-by (PL/SQL) table type
-				then 
-					p_bind_char || p_Formatted_Name 
-					|| '.COUNT || '
-            		|| Literal(' rows ') 
 				else 
 					Literal('<datatype '||p_Data_Type||'>')
 			end;

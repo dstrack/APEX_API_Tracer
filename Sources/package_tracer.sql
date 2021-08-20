@@ -246,10 +246,10 @@ IS
         p_Dest_Schema IN VARCHAR2 
     );
 
-    FUNCTION Is_Printable_PLS_Type (
-        p_PLS_Type IN VARCHAR2
+    FUNCTION Is_Printable_DATA_Type (
+        p_Data_Type IN VARCHAR2
     ) RETURN VARCHAR2 DETERMINISTIC;
-
+    
     FUNCTION Format_Call_Parameter(
         p_Object_Name IN VARCHAR2,
         p_Object_Owner IN VARCHAR2,
@@ -1151,21 +1151,7 @@ $END
         end if;
     end Log_Elapsed_Time;
 
-    FUNCTION Is_Printable_PLS_Type (
-        p_PLS_Type IN VARCHAR2
-    ) RETURN VARCHAR2 DETERMINISTIC 
-    IS 
-        $IF DBMS_DB_VERSION.VERSION >= 12 $THEN
-            PRAGMA UDF;
-        $END
-    BEGIN 
-        RETURN case when p_PLS_Type IN ('BINARY_DOUBLE', 'BINARY_FLOAT', 'BINARY_INTEGER', 'BLOB', 'BOOLEAN',
-                'CHAR', 'CLOB', 'DATE', 'DOUBLE PRECISION', 'FLOAT', 'INTEGER', 'NUMBER', 'PLS_INTEGER', 'RAW', 'REAL', 
-                'ROWID', 'SMALLINT', 'TIME', 'TIME WITH TIME ZONE', 'TIMESTAMP', 'TIMESTAMP WITH LOCAL TIME ZONE', 
-                'TIMESTAMP WITH TIME ZONE', 'UROWID', 'VARCHAR2') then 'YES' else 'NO' end;
-    END Is_Printable_PLS_Type;
-
-     FUNCTION Is_Printable_DATA_Type (
+    FUNCTION Is_Printable_DATA_Type (
         p_Data_Type IN VARCHAR2
     ) RETURN VARCHAR2 DETERMINISTIC 
     IS 
@@ -1174,8 +1160,9 @@ $END
         $END
     BEGIN 
         RETURN case when p_Data_Type IN ('BINARY_DOUBLE', 'BINARY_FLOAT', 'BINARY_INTEGER', 'BLOB',
-                'CHAR', 'CLOB', 'DATE', 'FLOAT', 'NCHAR', 'NCLOB', 'NUMBER', 'NVARCHAR2', 'RAW', 'REAL', 
-                'ROWID', 'TIME', 'TIME WITH TIME ZONE', 'TIMESTAMP', 'TIMESTAMP WITH LOCAL TIME ZONE', 
+                'CHAR', 'CLOB', 'DATE', 'FLOAT', 'INTERVAL DAY TO SECOND', 'INTERVAL YEAR TO MONTH', 
+                'NCHAR', 'NCLOB', 'NUMBER', 'NVARCHAR2', 'RAW', 'REAL', 
+                'PL/SQL BOOLEAN', 'ROWID', 'TIME', 'TIME WITH TIME ZONE', 'TIMESTAMP', 'TIMESTAMP WITH LOCAL TIME ZONE', 
                 'TIMESTAMP WITH TIME ZONE', 'UROWID', 'VARCHAR2') then 'YES' else 'NO' end;
     END Is_Printable_DATA_Type;
 
@@ -1217,7 +1204,7 @@ $END
 			v_result VARCHAR2(200);
 		BEGIN 
 			v_offset := INSTR(p_arg_name, '_');
-			if v_offset > 0 then 
+			if v_offset > 0 and v_offset < 4 then 
 				v_result := lower(substr(p_arg_name, 1, v_offset)) || initcap(substr(p_arg_name, v_offset+1));
 			else 
 				v_result := lower(p_arg_name);
@@ -1231,7 +1218,13 @@ $END
 		) RETURN VARCHAR2 
 		IS 
 		BEGIN 
-			RETURN case when Is_Printable_DATA_Type(p_Data_Type) = 'YES' 
+			RETURN case 
+				when p_Data_Type IN ('TABLE', 'PL/SQL TABLE', 'VARRAY') -- Nested table type, Index-by (PL/SQL) table type
+				then 
+					p_bind_char || p_Formatted_Name 
+					|| '.COUNT || '
+            		|| Enquote_Literal(' rows') 
+				when Is_Printable_DATA_Type(p_Data_Type) = 'YES' 
 				then 
 					'api_trace.'
 					|| case when p_Argument_Name in ('P_PASSWORD', 'P_PASS', 'P_WALLET_PWD', 'P_WEB_PASSWORD', 'P_OLD_PASSWORD', 'P_NEW_PASSWORD')
@@ -1243,11 +1236,6 @@ $END
 					|| '(' || p_bind_char || p_Formatted_Name 
 					|| case when p_value_max_length != 1000 then ', ' || p_value_max_length end
 					|| ')'
-				when p_Data_Type IN ('TABLE', 'PL/SQL TABLE') -- Nested table type, Index-by (PL/SQL) table type
-				then 
-					p_bind_char || p_Formatted_Name 
-					|| '.COUNT || '
-            		|| Enquote_Literal(' rows ') 
 				else 
 					Enquote_Literal('<datatype '||p_Data_Type||'>')
 			end;
@@ -1420,7 +1408,6 @@ $END
         v_Package_Name VARCHAR2(128) := UPPER(p_Package_Name);
         v_Package_Owner VARCHAR2(128) := p_Dest_Schema;
         v_Begin CONSTANT VARCHAR2(1000) := NL(p_Indent) || 'begin';
-        v_End CONSTANT VARCHAR2(1000) := NL(p_Indent) || 'end;';
         v_Condition_Start CONSTANT VARCHAR2(1000) := case when p_Condition_Start IS NOT NULL and p_Condition_Enabled = 'Y' then NL(p_Indent + 4) || p_Condition_Start end;
         v_Condition_End CONSTANT VARCHAR2(1000) := case when p_Condition_End IS NOT NULL and p_Condition_Enabled = 'Y' then NL(p_Indent + 4) || p_Condition_End end;
 		v_Indent NUMBER := case when v_Condition_End IS NOT NULL then p_Indent + 8 ELSE p_Indent + 4 end;
@@ -1463,7 +1450,7 @@ $END
             FROM (
             	SELECT PACKAGE_NAME, OWNER, OBJECT_NAME, SUBPROGRAM_ID, 
             		OVERLOAD, IN_OUT, SEQUENCE, ARGUMENT_NAME,
-            		CASE WHEN package_tracer.Is_Printable_PLS_Type(A.PLS_TYPE) = 'YES' THEN 
+            		CASE WHEN package_tracer.Is_Printable_DATA_Type(A.DATA_TYPE) = 'YES' THEN 
             			LOWER(ARGUMENT_NAME)
             		END PRINT_ARGUMENT_NAME
 				FROM SYS.ALL_ARGUMENTS A
@@ -1503,7 +1490,7 @@ $END
                 end
                 || ';' 
                 || v_Condition_End
-                || v_End
+                || PRO_END
             WHEN p_Compact = 'Y' and p_Logging_Start_Enabled = 'N' THEN 
                 NL(p_Indent + 4) || '----' 
                 || v_Condition_Start
@@ -1517,7 +1504,7 @@ $END
                 end
                 || ';' 
                 || v_Condition_End
-                || v_End
+                || PRO_END
             WHEN p_Compact = 'N' and p_Logging_Start_Enabled = 'Y' THEN 
             	case when RETURN_TYPE IS NOT NULL then 
             		NL(p_Indent + 4) || p_Variable_Name || ' ' || LOWER(RETURN_TYPE) || ';'
@@ -1561,10 +1548,12 @@ $END
 					)
                 ), v_Indent)
                 || v_Condition_End 
-            	|| case when RETURN_TYPE IS NOT NULL then 
+            	|| case when RETURN_TYPE IS NOT NULL
+            		and PRO.PIPELINED = 'NO'
+            		and PRO.AGGREGATE = 'NO' then 
             		NL(p_Indent + 4) || 'return ' || p_Variable_Name || ';'
             	end
-                || v_End
+                || PRO_END
             WHEN p_Compact = 'N' and p_Logging_Start_Enabled = 'N' THEN 
                 case when RETURN_TYPE IS NOT NULL then 
             		NL(p_Indent + 4) || p_Variable_Name || ' ' || LOWER(RETURN_TYPE) || ';'
@@ -1591,10 +1580,12 @@ $END
                     )
                 ), v_Indent)
                 || v_Condition_End 
-             	|| case when RETURN_TYPE IS NOT NULL then 
-            		NL(p_Indent + 4) || 'return ' || p_Variable_Name || ';'
+             	|| case when RETURN_TYPE IS NOT NULL
+            		and PRO.PIPELINED = 'NO'
+            		and PRO.AGGREGATE = 'NO' then 
+            			NL(p_Indent + 4) || 'return ' || p_Variable_Name || ';'
             	end
-               || v_End
+               || PRO_END
             END LOGGING_CALL
 		FROM (
 			SELECT PRO.OBJECT_NAME, 
@@ -1614,6 +1605,7 @@ $END
 					DENSE_RANK() OVER (PARTITION BY PRO.PROCEDURE_NAME, RET.IN_OUT, SIGN(ARG.ARGS_COUNT) ORDER BY PRO.SUBPROGRAM_ID),
 					'in', 1
 				) HEADER, -- find original procedure header with parameter default values
+				NL(p_Indent) || 'end ' || LOWER(PRO.PROCEDURE_NAME) || ';' PRO_END,
 				PRO.OWNER || '.' || PRO.OBJECT_NAME || '.' || PRO.PROCEDURE_NAME CALLING_SUBPROG,
 				INITCAP(PRO.OBJECT_NAME) || '.' || INITCAP(PRO.PROCEDURE_NAME) PACKAGE_PROCEDURE_NAME,
                 ARG.PARAM_LIST, ARG.PARAM_LIST_IN, ARG.PARAM_LIST_OUT, ARG.OUT_COUNT, 
