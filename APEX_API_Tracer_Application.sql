@@ -27,7 +27,7 @@ prompt APPLICATION 103 - APEX API Tracer
 -- Application Export:
 --   Application:     103
 --   Name:            APEX API Tracer
---   Date and Time:   22:13 Monday August 23, 2021
+--   Date and Time:   22:44 Monday August 23, 2021
 --   Exported By:     DIRK
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -118,7 +118,7 @@ wwv_flow_api.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'APEX API Tracer'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210823221351'
+,p_last_upd_yyyymmddhh24miss=>'20210823224413'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>9
 ,p_ui_type_name => null
@@ -13095,10 +13095,9 @@ wwv_flow_api.create_install_script(
 '',
 '  1. the package is accessible to the schema user via a synonym.',
 '  2. the procedure or function is listed in the package header.',
-'  3. the package defines no record or table types for function arguments',
-'  4. the package header is not wrapped.',
+'  3. the package header is not wrapped.',
 '',
-'The enable procedure will generate a package with the same name as the synonym in your local schema.',
+'The ENABLE procedure will generate a package with the same name as the synonym in your local schema.',
 '',
 'The link from your local applications to the synonym will be intercepted by the generated package.',
 '',
@@ -13232,10 +13231,6 @@ wwv_flow_api.create_install_script(
 '    c_APEX_Condition_End       CONSTANT VARCHAR2(1000) := ''end if;'';',
 '    c_Package_Name             CONSTANT VARCHAR2(128) := lower($$plsql_unit);',
 '    g_debug                    CONSTANT BOOLEAN := FALSE;',
-'    /* When packages use nested tables for arguments of there function and procedured,',
-'    	then this packages are filtered in the packages list.',
-'    */',
-'    g_Exclude_Nested_Tables    CONSTANT BOOLEAN := FALSE;',
 '    /* when the constant g_Use_Plscope_Settings is set to TRUE,  ',
 '    	information about the public variables of the package headers is collected.',
 '    	The Global_Variables_Count of the packages list is calculated ',
@@ -13661,15 +13656,6 @@ wwv_flow_api.create_install_script(
 '            where Syn.OWNER IN (''PUBLIC'', SYS_CONTEXT(''USERENV'', ''CURRENT_SCHEMA'') )',
 '            and SYN.SYNONYM_NAME LIKE p_Search_Name',
 '            and OBJ.OBJECT_TYPE = ''PACKAGE''',
-'$IF package_tracer.g_Exclude_Nested_Tables $THEN',
-'			and NOT EXISTS ( -- package is defining nested record types for function arguments or return values ',
-'				select 1 ',
-'				from MV_PACKAGE_RECORD_TYPES A',
-'				where A.PACKAGE_NAME = SYN.TABLE_NAME',
-'				and A.PACKAGE_OWNER = SYN.TABLE_OWNER',
-'				and A.Nested_Table = ''Y'' ',
-'            )           ',
-'$END',
 '			and NOT EXISTS (',
 '            	select * from SYS.ALL_ARGUMENTS A',
 '				where (A.DATA_TYPE IN (''UNDEFINED'')',
@@ -14173,7 +14159,14 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '                    PA.OWNER, T.SEQUENCE_NAME OBJECT_NAME, ',
 '                    ''SEQUENCE'' OBJECT_TYPE, ',
 '                    ''SYNONYM'' DEST_OBJECT_TYPE,',
-'        '))
+'                    0 FOREIGN_DEPS_CNT',
+'                FROM SYS.USER_SEQUENCES T, PA',
+'                WHERE PA.GRANTEE IS NOT NULL',
+'            ), MAIN_Q AS (',
+'                SELECT S.OWNER, S.OBJECT_NAME, S.OBJECT_TYPE, S.DEST_OBJECT_TYPE,',
+'                    S.FOREIGN_DEPS_CNT, ',
+'                    case when EXISTS (',
+'                            SELECT '))
 );
 end;
 /
@@ -14181,14 +14174,7 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'            0 FOREIGN_DEPS_CNT',
-'                FROM SYS.USER_SEQUENCES T, PA',
-'                WHERE PA.GRANTEE IS NOT NULL',
-'            ), MAIN_Q AS (',
-'                SELECT S.OWNER, S.OBJECT_NAME, S.OBJECT_TYPE, S.DEST_OBJECT_TYPE,',
-'                    S.FOREIGN_DEPS_CNT, ',
-'                    case when EXISTS (',
-'                            SELECT 1 ',
+'1 ',
 '                            FROM SYS.ALL_DEPENDENCIES D',
 '                            WHERE D.OWNER = p_Target_Schema',
 '                            AND D.NAME = S.OBJECT_NAME',
@@ -14509,7 +14495,7 @@ wwv_flow_api.append_to_install_script(
 '    	p_Result := REPLACE(p_Result, ''#SUBPROGRAM#'', INITCAP(p_Package_Name) || ''.'' || INITCAP(p_Procedure_Name));',
 '    	p_Result := REPLACE(p_Result, ''#RETURN_TYPE#'', p_Return_Type);',
 '    	p_Result := REPLACE(p_Result, ''#PROCEDURE_TYPE#'', case when p_Return_Type IS NULL then ''Procedure'' else ''Function'' end);',
-'    	p_Result := REPLACE(p_Result, ''#SYSDATE#'', TO_CHAR(SYSDATE, ''YYYYMMTT''));',
+'    	p_Result := REPLACE(p_Result, ''#SYSDATE#'', TO_CHAR(SYSDATE, ''YYYYMMDD''));',
 '    	return p_Result;',
 '    end Replace_Substitution;',
 '    ',
@@ -14879,7 +14865,15 @@ wwv_flow_api.append_to_install_script(
 '        v_Timemark NUMBER := dbms_utility.get_time;',
 '    BEGIN',
 '        v_Clob := Get_Package_Source(',
-'    '))
+'            p_Package_Name => p_Object_Name,',
+'            p_Package_Owner => p_Object_Owner,',
+'            p_Editionable  => p_Editionable',
+'        );',
+'        if g_debug then',
+'            Log_Elapsed_Time(v_Timemark, ''-- Get_Package_Spec: get package source'');    ',
+'        end if;',
+'        if p_Object_Owner != p_Dest_Schema then ',
+'          v_Clob := REPLA'))
 );
 null;
 end;
@@ -14888,15 +14882,7 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'        p_Package_Name => p_Object_Name,',
-'            p_Package_Owner => p_Object_Owner,',
-'            p_Editionable  => p_Editionable',
-'        );',
-'        if g_debug then',
-'            Log_Elapsed_Time(v_Timemark, ''-- Get_Package_Spec: get package source'');    ',
-'        end if;',
-'        if p_Object_Owner != p_Dest_Schema then ',
-'          v_Clob := REPLACE(v_Clob, Enquote_Name(p_Object_Owner), Enquote_Name(p_Dest_Schema));',
+'CE(v_Clob, Enquote_Name(p_Object_Owner), Enquote_Name(p_Dest_Schema));',
 '        end if;',
 '        if p_Object_Name != p_Package_Name then ',
 '          v_Clob := REPLACE(v_Clob, Enquote_Name(p_Object_Name), Enquote_Name(p_Package_Name));',
@@ -15583,7 +15569,13 @@ wwv_flow_api.append_to_install_script(
 '											p_In_Out => ''OUT''',
 '										)',
 '										|| '';'' || NL(4)',
-'									'))
+'										|| ''END LOOP;''',
+'									when DATA_TYPE = ''PL/SQL TABLE'' ',
+'									then ',
+'										''idx'' || A.POSITION || '' := '' || ARG_PREFIX || ARGUMENT_NAME || ''.FIRST;'' || NL(4)',
+'										|| ''WHILE idx'' || A.POSITION || '' IS NOT NULL LOOP'' || NL(8)',
+'										|| ARGUMENT_NAME || ''('' || ''idx'' || A.POSITION || '') := ''',
+'										|| package_tracer.Get_Record_Fi'))
 );
 null;
 end;
@@ -15592,13 +15584,7 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'	|| ''END LOOP;''',
-'									when DATA_TYPE = ''PL/SQL TABLE'' ',
-'									then ',
-'										''idx'' || A.POSITION || '' := '' || ARG_PREFIX || ARGUMENT_NAME || ''.FIRST;'' || NL(4)',
-'										|| ''WHILE idx'' || A.POSITION || '' IS NOT NULL LOOP'' || NL(8)',
-'										|| ARGUMENT_NAME || ''('' || ''idx'' || A.POSITION || '') := ''',
-'										|| package_tracer.Get_Record_Fields (',
+'elds (',
 '											p_Package_Name => PACKAGE_NAME,',
 '											p_Package_Owner => OWNER,',
 '											p_Type_Name => TYPE_NAME,',
@@ -16045,17 +16031,6 @@ wwv_flow_api.append_to_install_script(
 '              RAISE_APPLICATION_ERROR(-20002, ''The package '' || v_Synonym_Name || '' already exists is the current schema.'');',
 '            -- option: the package is renamed and the tracing package takes it''s name.',
 '        end if;        ',
-'$IF package_tracer.g_Exclude_Nested_Tables $THEN',
-'		select COUNT(*) into v_Count',
-'		from MV_PACKAGE_RECORD_TYPES A',
-'		where A.PACKAGE_NAME = v_Package_Name_Out',
-'		and A.PACKAGE_OWNER = v_Package_Owner_Out',
-'		and A.Nested_Table = ''Y'';',
-'        if v_Count > 0 then ',
-unistr('            RAISE_APPLICATION_ERROR(-20003, ''The package '' || v_Synonym_Name || '' is defining nested record types for function arguments and can\00B4t be traced.'');'),
-'            return;',
-'        end if;',
-'$END',
 '		if g_debug then',
 '            Log_Elapsed_Time(v_Timemark, ''-- Checked for table or record types'');       ',
 '        end if;',
@@ -16164,16 +16139,7 @@ unistr('            RAISE_APPLICATION_ERROR(-20003, ''The package '' || v_Synony
 '				EXECUTE IMMEDIATE v_Clob;',
 '				-- disable the collection of global variables declared in the package into ALL_IDENTIFIERS',
 '				EXECUTE IMMEDIATE q''[ALTER SESSION SET PLSCOPE_SETTINGS = ''IDENTIFIERS:NONE'']'';',
-'			$ELS'))
-);
-null;
-end;
-/
-begin
-wwv_flow_api.append_to_install_script(
- p_id=>wwv_flow_api.id(263953810352951150)
-,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'E',
+'			$ELSE',
 '				-- compile the package header',
 '				EXECUTE IMMEDIATE v_Clob;',
 '			$END',
@@ -16192,7 +16158,16 @@ wwv_flow_api.append_to_install_script(
 '            p_Variable_Name => p_Variable_Name,',
 '            p_value_max_length => p_value_max_length',
 '        );',
-'        if dbms_lob.getlength(v_Clob) = 0 or v_Clob IS NULL then ',
+'        if dbms_lob.getlength(v_Clob) = 0 or v_Clob IS NULL th'))
+);
+null;
+end;
+/
+begin
+wwv_flow_api.append_to_install_script(
+ p_id=>wwv_flow_api.id(263953810352951150)
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'en ',
 '            RAISE_APPLICATION_ERROR(-20004, ''The package body for '' || v_Synonym_Name || '' could not be generated.'');',
 '            return;',
 '        end if;',

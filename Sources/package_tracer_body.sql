@@ -98,15 +98,6 @@ IS
             where Syn.OWNER IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') )
             and SYN.SYNONYM_NAME LIKE p_Search_Name
             and OBJ.OBJECT_TYPE = 'PACKAGE'
-$IF package_tracer.g_Exclude_Nested_Tables $THEN
-			and NOT EXISTS ( -- package is defining nested record types for function arguments or return values 
-				select 1 
-				from MV_PACKAGE_RECORD_TYPES A
-				where A.PACKAGE_NAME = SYN.TABLE_NAME
-				and A.PACKAGE_OWNER = SYN.TABLE_OWNER
-				and A.Nested_Table = 'Y' 
-            )           
-$END
 			and NOT EXISTS (
             	select * from SYS.ALL_ARGUMENTS A
 				where (A.DATA_TYPE IN ('UNDEFINED')
@@ -938,7 +929,7 @@ $END
     	p_Result := REPLACE(p_Result, '#SUBPROGRAM#', INITCAP(p_Package_Name) || '.' || INITCAP(p_Procedure_Name));
     	p_Result := REPLACE(p_Result, '#RETURN_TYPE#', p_Return_Type);
     	p_Result := REPLACE(p_Result, '#PROCEDURE_TYPE#', case when p_Return_Type IS NULL then 'Procedure' else 'Function' end);
-    	p_Result := REPLACE(p_Result, '#SYSDATE#', TO_CHAR(SYSDATE, 'YYYYMMTT'));
+    	p_Result := REPLACE(p_Result, '#SYSDATE#', TO_CHAR(SYSDATE, 'YYYYMMDD'));
     	return p_Result;
     end Replace_Substitution;
     
@@ -2456,17 +2447,6 @@ $END
               RAISE_APPLICATION_ERROR(-20002, 'The package ' || v_Synonym_Name || ' already exists is the current schema.');
             -- option: the package is renamed and the tracing package takes it's name.
         end if;        
-$IF package_tracer.g_Exclude_Nested_Tables $THEN
-		select COUNT(*) into v_Count
-		from MV_PACKAGE_RECORD_TYPES A
-		where A.PACKAGE_NAME = v_Package_Name_Out
-		and A.PACKAGE_OWNER = v_Package_Owner_Out
-		and A.Nested_Table = 'Y';
-        if v_Count > 0 then 
-            RAISE_APPLICATION_ERROR(-20003, 'The package ' || v_Synonym_Name || ' is defining nested record types for function arguments and can´t be traced.');
-            return;
-        end if;
-$END
 		if g_debug then
             Log_Elapsed_Time(v_Timemark, '-- Checked for table or record types');       
         end if;

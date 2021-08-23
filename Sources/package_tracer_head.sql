@@ -4,10 +4,9 @@ This program can generate a package for tracing automatically when the following
 
   1. the package is accessible to the schema user via a synonym.
   2. the procedure or function is listed in the package header.
-  3. the package defines no record or table types for function arguments
-  4. the package header is not wrapped.
+  3. the package header is not wrapped.
 
-The enable procedure will generate a package with the same name as the synonym in your local schema.
+The ENABLE procedure will generate a package with the same name as the synonym in your local schema.
 
 The link from your local applications to the synonym will be intercepted by the generated package.
 
@@ -141,10 +140,6 @@ IS
     c_APEX_Condition_End       CONSTANT VARCHAR2(1000) := 'end if;';
     c_Package_Name             CONSTANT VARCHAR2(128) := lower($$plsql_unit);
     g_debug                    CONSTANT BOOLEAN := FALSE;
-    /* When packages use nested tables for arguments of there function and procedured,
-    	then this packages are filtered in the packages list.
-    */
-    g_Exclude_Nested_Tables    CONSTANT BOOLEAN := FALSE;
     /* when the constant g_Use_Plscope_Settings is set to TRUE,  
     	information about the public variables of the package headers is collected.
     	The Global_Variables_Count of the packages list is calculated 
