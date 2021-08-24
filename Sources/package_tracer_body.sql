@@ -212,7 +212,7 @@ IS
                     P.GRANT_STATS,
                     P.REVOKE_STATS,
                     S.SYNONYM_STATS
-                FROM table(package_tracer.get_Packages_List) PL
+                FROM table(get_Packages_List) PL
                 LEFT OUTER JOIN SYNONYMS_Q S ON S.Object_Owner = PL.PACKAGE_OWNER AND S.Object_Name = PL.PACKAGE_NAME
                 LEFT OUTER JOIN PRIVS_Q P ON P.Object_Owner = PL.PACKAGE_OWNER AND P.Object_Name = PL.PACKAGE_NAME
              ), CONFLICTING_Q AS (
@@ -285,7 +285,7 @@ IS
                     SELECT DEP.NAME SYNONYM_NAME, 
                             DEP.REFERENCED_NAME PACKAGE_NAME,
                             DEP.REFERENCED_OWNER PACKAGE_OWNER,
-                            package_tracer.Get_Package_Synonym_Text(DEP.REFERENCED_NAME) SYNONYM_STATS
+                            Get_Package_Synonym_Text(DEP.REFERENCED_NAME) SYNONYM_STATS
                     FROM SYS.USER_DEPENDENCIES DEP
                     where DEP.TYPE = 'PACKAGE BODY'
                     and DEP.REFERENCED_TYPE = 'PACKAGE'
@@ -422,7 +422,7 @@ IS
                         WHERE OBJ.OBJECT_NAME = PL.SYNONYM_NAME
                         AND OBJECT_TYPE = 'PACKAGE'
                     ) THEN 'Y' ELSE 'N' END IS_ENABLED
-                FROM table(package_tracer.get_APEX_Packages_List) PL
+                FROM table(get_APEX_Packages_List) PL
                 LEFT OUTER JOIN SYNONYMS_Q S ON S.Object_Owner = PL.PACKAGE_OWNER AND S.Object_Name = PL.PACKAGE_NAME
                 LEFT OUTER JOIN PRIVS_Q P ON P.Object_Owner = PL.PACKAGE_OWNER AND P.Object_Name = PL.PACKAGE_NAME
 			    LEFT OUTER JOIN CONFLICTING_Q CF ON CF.OWNER = PL.PACKAGE_OWNER AND CF.TYPE_NAME = PL.PACKAGE_NAME
@@ -924,8 +924,8 @@ IS
         $END
     	p_Result VARCHAR2(32767);
     begin
-    	p_Result := REPLACE(p_String, '#PROCEDURE_NAME#', p_Procedure_Name);
-    	p_Result := REPLACE(p_Result, '#PACKAGE_NAME#', p_Package_Name);
+    	p_Result := REPLACE(p_String, '#PROCEDURE_NAME#', INITCAP(p_Procedure_Name));
+    	p_Result := REPLACE(p_Result, '#PACKAGE_NAME#', INITCAP(p_Package_Name));
     	p_Result := REPLACE(p_Result, '#SUBPROGRAM#', INITCAP(p_Package_Name) || '.' || INITCAP(p_Procedure_Name));
     	p_Result := REPLACE(p_Result, '#RETURN_TYPE#', p_Return_Type);
     	p_Result := REPLACE(p_Result, '#PROCEDURE_TYPE#', case when p_Return_Type IS NULL then 'Procedure' else 'Function' end);
@@ -935,22 +935,26 @@ IS
     
     FUNCTION Dyn_Log_Call_List (
         p_Package_Name IN VARCHAR2,
-        p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
+        p_Package_Owner  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
         p_Compact IN VARCHAR2 DEFAULT 'Y', --Y/N
         p_Logging_Start_Enabled VARCHAR2 DEFAULT 'N', --Y/N
         p_Logging_Start_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Start_Call,
         p_Logging_Finish_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Exit_Call,
         p_Logging_API_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_API_Call,
+        p_Logging_Exception_Enabled VARCHAR2 DEFAULT 'N', --Y/N
+        p_Logging_API_Exception IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_API_Exception,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result',
         p_Condition_Start IN VARCHAR2 DEFAULT c_APEX_Condition_Start,
         p_Condition_End IN VARCHAR2 DEFAULT c_APEX_Condition_End,
         p_Condition_Enabled VARCHAR2 DEFAULT 'N', --Y/N
+        p_Before_Each_Procedure VARCHAR2 DEFAULT NULL,
+        p_After_Each_Procedure VARCHAR2 DEFAULT NULL,
         p_Indent IN NUMBER DEFAULT 8
     )
     RETURN tab_logging_calls PIPELINED
     IS
         v_Package_Name VARCHAR2(128) := UPPER(p_Package_Name);
-        v_Package_Owner VARCHAR2(128) := p_Dest_Schema;
+        v_Package_Owner VARCHAR2(128) := p_Package_Owner;
         v_Begin CONSTANT VARCHAR2(1000) := NL(p_Indent) || 'begin';
         v_Condition_Start CONSTANT VARCHAR2(1000) := case when p_Condition_Start IS NOT NULL and p_Condition_Enabled = 'Y' then NL(p_Indent + 4) || p_Condition_Start end;
         v_Condition_End CONSTANT VARCHAR2(1000) := case when p_Condition_End IS NOT NULL and p_Condition_Enabled = 'Y' then NL(p_Indent + 4) || p_Condition_End end;
@@ -994,7 +998,7 @@ IS
             FROM (
             	SELECT PACKAGE_NAME, OWNER, OBJECT_NAME, SUBPROGRAM_ID, 
             		OVERLOAD, IN_OUT, SEQUENCE, ARGUMENT_NAME,
-            		CASE WHEN package_tracer.Is_Printable_DATA_Type(A.DATA_TYPE) = 'YES' THEN 
+            		CASE WHEN Is_Printable_DATA_Type(A.DATA_TYPE) = 'YES' THEN 
             			LOWER(ARGUMENT_NAME)
             		END PRINT_ARGUMENT_NAME
 				FROM SYS.ALL_ARGUMENTS A
@@ -1011,7 +1015,8 @@ IS
 			TO_CLOB(INDENT(HEADER||chr(10), p_Indent))
 			|| 'is' 
             || CASE WHEN p_Compact = 'Y' and p_Logging_Start_Enabled = 'Y' THEN 
-                v_Condition_Start
+            	PRO_BEGIN
+                || v_Condition_Start
                 || NL(v_Indent)
                 || 'EXECUTE IMMEDIATE api_trace.Dyn_Log_Start'
                 || case when PRO.OVERLOAD is not null then '(p_overload => ' || PRO.OVERLOAD || ')' end
@@ -1034,9 +1039,24 @@ IS
                 end
                 || ';' 
                 || v_Condition_End
+                || PRO_RETURN
+                || case when p_Logging_Exception_Enabled = 'Y' then 
+					PRO_EXCEPTION
+					|| NL(p_Indent + 4)
+					|| 'EXECUTE IMMEDIATE api_trace.Dyn_Log_Exception'
+					|| case when PRO.OVERLOAD is not null then '(p_overload => ' || PRO.OVERLOAD || ')' end
+					|| case when PARAM_LIST IS NOT NULL then 
+						NL(p_Indent + 4)
+						|| 'USING '
+						|| PARAM_LIST
+					end
+					|| ';' 
+					|| NL(p_Indent + 4) || 'RAISE;'
+                end
                 || PRO_END
             WHEN p_Compact = 'Y' and p_Logging_Start_Enabled = 'N' THEN 
-                NL(p_Indent + 4) || '----' 
+            	PRO_BEGIN
+                || NL(p_Indent + 4) || '----' 
                 || v_Condition_Start
                 || NL(v_Indent)
                 || 'EXECUTE IMMEDIATE api_trace.Dyn_Log_Call'
@@ -1048,12 +1068,23 @@ IS
                 end
                 || ';' 
                 || v_Condition_End
+                || PRO_RETURN
+                || case when p_Logging_Exception_Enabled = 'Y' then 
+					PRO_EXCEPTION
+					|| NL(p_Indent + 4)
+					|| 'EXECUTE IMMEDIATE api_trace.Dyn_Log_Exception'
+					|| case when PRO.OVERLOAD is not null then '(p_overload => ' || PRO.OVERLOAD || ')' end
+					|| case when PARAM_LIST IS NOT NULL then 
+						NL(p_Indent + 4)
+						|| 'USING '
+						|| PARAM_LIST
+					end
+					|| ';' 
+					|| NL(p_Indent + 4) || 'RAISE;'
+                end
                 || PRO_END
             WHEN p_Compact = 'N' and p_Logging_Start_Enabled = 'Y' THEN 
-            	case when RETURN_TYPE IS NOT NULL then 
-            		NL(p_Indent + 4) || p_Variable_Name || ' ' || LOWER(RETURN_TYPE) || ';'
-            	end
-            	|| v_Begin
+            	PRO_BEGIN
                 || v_Condition_Start
                 || INDENT(replace(
                 	Logging_Start_Call, '%s',
@@ -1062,7 +1093,6 @@ IS
 						p_Object_Owner => v_Package_Owner,
 						p_Procedure_Name => PROCEDURE_NAME,
 						p_Subprogram_ID => SUBPROGRAM_ID,
-                            
                         p_calling_subprog => CALLING_SUBPROG,
                         p_synonym_name => PACKAGE_PROCEDURE_NAME,
                         p_bind_char => null,
@@ -1080,7 +1110,6 @@ IS
 						p_Object_Owner => v_Package_Owner,
 						p_Procedure_Name => PROCEDURE_NAME,
 						p_Subprogram_ID => SUBPROGRAM_ID,
-                            
 						p_calling_subprog => CALLING_SUBPROG,
                         p_synonym_name => PACKAGE_PROCEDURE_NAME,
 						p_bind_char => null,
@@ -1092,17 +1121,32 @@ IS
 					)
                 ), v_Indent)
                 || v_Condition_End 
-            	|| case when RETURN_TYPE IS NOT NULL
-            		and PRO.PIPELINED = 'NO'
-            		and PRO.AGGREGATE = 'NO' then 
-            		NL(p_Indent + 4) || 'return ' || p_Variable_Name || ';'
-            	end
+            	|| PRO_RETURN
+                || case when p_Logging_Exception_Enabled = 'Y' then 
+                	PRO_EXCEPTION
+					|| INDENT(replace(
+							Logging_API_Exception, '%s',
+							Format_Call_Parameter(
+								p_Object_Name => v_Package_Name,
+								p_Object_Owner => v_Package_Owner,
+								p_Procedure_Name => PROCEDURE_NAME,
+								p_Subprogram_ID => SUBPROGRAM_ID,
+								p_calling_subprog => CALLING_SUBPROG,
+								p_synonym_name => PACKAGE_PROCEDURE_NAME,
+								p_bind_char => null,
+								p_overload => PRO.OVERLOAD,
+								p_in_out => 'IN/OUT', 
+								p_return_variable => 
+									case when RETURN_TYPE IS NOT NULL
+									then p_Variable_Name end
+							)
+						), p_Indent + 4
+					)
+					|| NL(p_Indent + 4) || 'RAISE;'
+                end
                 || PRO_END
             WHEN p_Compact = 'N' and p_Logging_Start_Enabled = 'N' THEN 
-                case when RETURN_TYPE IS NOT NULL then 
-            		NL(p_Indent + 4) || p_Variable_Name || ' ' || LOWER(RETURN_TYPE) || ';'
-            	end
-            	|| v_Begin
+            	PRO_BEGIN
                 || NL(p_Indent + 4) || '----' 
                 || v_Condition_Start
                 || INDENT(replace(
@@ -1123,12 +1167,30 @@ IS
                     )
                 ), v_Indent)
                 || v_Condition_End 
-             	|| case when RETURN_TYPE IS NOT NULL
-            		and PRO.PIPELINED = 'NO'
-            		and PRO.AGGREGATE = 'NO' then 
-            			NL(p_Indent + 4) || 'return ' || p_Variable_Name || ';'
-            	end
-               || PRO_END
+             	|| PRO_RETURN
+                || case when p_Logging_Exception_Enabled = 'Y' then 
+               		PRO_EXCEPTION
+					|| INDENT(replace(
+							Logging_API_Exception, '%s',
+							Format_Call_Parameter(
+								p_Object_Name => v_Package_Name,
+								p_Object_Owner => v_Package_Owner,
+								p_Procedure_Name => PROCEDURE_NAME,
+								p_Subprogram_ID => SUBPROGRAM_ID,
+								p_calling_subprog => CALLING_SUBPROG,
+								p_synonym_name => PACKAGE_PROCEDURE_NAME,
+								p_bind_char => null,
+								p_overload => PRO.OVERLOAD,
+								p_in_out => 'IN/OUT', 
+								p_return_variable => 
+									case when RETURN_TYPE IS NOT NULL
+									then p_Variable_Name end
+							)
+						), p_Indent + 4
+					)
+					|| NL(p_Indent + 4) || 'RAISE;'
+                end
+                || PRO_END
             END LOGGING_CALL
 		FROM (
 			SELECT PRO.OBJECT_NAME, 
@@ -1137,7 +1199,13 @@ IS
 				PRO.SUBPROGRAM_ID,
 				PRO.OVERLOAD,
 				PRO.PIPELINED, PRO.AGGREGATE,
-                REGEXP_SUBSTR (v_Header,  
+				Replace_Substitution(
+                	p_String => p_Before_Each_Procedure,
+					p_Procedure_Name => PRO.PROCEDURE_NAME,
+					p_Package_Name => PRO.OBJECT_NAME,
+					p_Return_Type => RET.RETURN_TYPE
+                )
+                || REGEXP_SUBSTR (v_Header,  
 					'('
 					|| case when RET.IN_OUT = 'OUT' then 'FUNCTION' else 'PROCEDURE' end
 					|| '\s+'||PRO.PROCEDURE_NAME
@@ -1147,8 +1215,34 @@ IS
 					1, 
 					DENSE_RANK() OVER (PARTITION BY PRO.PROCEDURE_NAME, RET.IN_OUT, SIGN(ARG.ARGS_COUNT) ORDER BY PRO.SUBPROGRAM_ID),
 					'in', 1
-				) HEADER, -- find original procedure header with parameter default values
-				NL(p_Indent) || 'end ' || LOWER(PRO.PROCEDURE_NAME) || ';' PRO_END,
+				) AS HEADER, -- find original procedure header with parameter default values
+            	case when RET.RETURN_TYPE IS NOT NULL then 
+            		NL(p_Indent + 4) || p_Variable_Name || ' ' || LOWER(RET.RETURN_TYPE) || ';'
+            	end
+            	|| v_Begin
+				AS PRO_BEGIN,
+				case when RETURN_TYPE IS NOT NULL
+            		and PRO.PIPELINED = 'NO'
+            		and PRO.AGGREGATE = 'NO' then 
+            			NL(p_Indent + 4) || 'return ' || p_Variable_Name || ';'
+            	end AS PRO_RETURN,
+				INDENT('end ' || LOWER(PRO.PROCEDURE_NAME) || ';' || chr(10)
+					|| Replace_Substitution(
+						p_String => p_After_Each_Procedure,
+						p_Procedure_Name => PRO.PROCEDURE_NAME,
+						p_Package_Name => PRO.OBJECT_NAME,
+						p_Return_Type => RET.RETURN_TYPE
+					), p_Indent
+                ) AS PRO_END,
+                NL(p_Indent) 
+                || 'exception ' 
+                || case when PIPELINED = 'YES' then 
+                	NL(p_Indent + 2)
+                	|| 'when NO_DATA_NEEDED then' || NL(p_Indent + 4)
+     				|| 'NULL;'
+                end
+                || NL(p_Indent + 2) || 'when OTHERS then '
+                AS PRO_EXCEPTION,
 				PRO.OWNER || '.' || PRO.OBJECT_NAME || '.' || PRO.PROCEDURE_NAME CALLING_SUBPROG,
 				INITCAP(PRO.OBJECT_NAME) || '.' || INITCAP(PRO.PROCEDURE_NAME) PACKAGE_PROCEDURE_NAME,
                 ARG.PARAM_LIST, ARG.PARAM_LIST_IN, ARG.PARAM_LIST_OUT, ARG.OUT_COUNT, 
@@ -1171,7 +1265,13 @@ IS
 					p_Procedure_Name => PRO.PROCEDURE_NAME,
 					p_Package_Name => PRO.OBJECT_NAME,
 					p_Return_Type => RET.RETURN_TYPE
-                ) Logging_Finish_Call
+                ) Logging_Finish_Call,
+                Replace_Substitution(
+                	p_String => p_Logging_API_Exception,
+					p_Procedure_Name => PRO.PROCEDURE_NAME,
+					p_Package_Name => PRO.OBJECT_NAME,
+					p_Return_Type => RET.RETURN_TYPE
+                ) Logging_API_Exception
 			FROM SYS.ALL_PROCEDURES PRO
 			LEFT OUTER JOIN ARGUMENTS_Q ARG 
 					ON PRO.OBJECT_NAME = ARG.PACKAGE_NAME
@@ -1289,7 +1389,7 @@ IS
         p_Object_Owner IN VARCHAR2,
         p_Editionable  IN VARCHAR2,
         p_Package_Name IN VARCHAR2,
-        p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
+        p_Package_Owner  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
         p_Synonym_Text IN VARCHAR2 DEFAULT NULL
     ) RETURN CLOB
     IS
@@ -1306,8 +1406,8 @@ IS
         if g_debug then
             Log_Elapsed_Time(v_Timemark, '-- Get_Package_Spec: get package source');    
         end if;
-        if p_Object_Owner != p_Dest_Schema then 
-          v_Clob := REPLACE(v_Clob, Enquote_Name(p_Object_Owner), Enquote_Name(p_Dest_Schema));
+        if p_Object_Owner != p_Package_Owner then 
+          v_Clob := REPLACE(v_Clob, Enquote_Name(p_Object_Owner), Enquote_Name(p_Package_Owner));
         end if;
         if p_Object_Name != p_Package_Name then 
           v_Clob := REPLACE(v_Clob, Enquote_Name(p_Object_Name), Enquote_Name(p_Package_Name));
@@ -1321,7 +1421,7 @@ IS
         end if;
         -- add comment
       v_Clob := REGEXP_REPLACE(v_Clob, 
-        '(package\s+'||Enquote_Name(p_Dest_Schema) || '\.' || Enquote_Name(p_Package_Name) || '.*?\s(is|as)\s)',
+        '(package\s+'||Enquote_Name(p_Package_Owner) || '\.' || Enquote_Name(p_Package_Name) || '.*?\s(is|as)\s)',
         '\1'||v_Comment||chr(10), 
         1, 1, 'in');
         if g_debug then
@@ -1453,10 +1553,6 @@ IS
 			end loop;
 			v_Offset := REGEXP_INSTR(v_Clob, v_Record_Pattern, v_Offset, 1, 1, 'in');
 		end loop;
-        if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- Pipe_Record_types record types done');       
-        end if;
-
         -- table types
 		v_Offset := 1;
 		for ind in 1..1000 loop
@@ -1482,9 +1578,6 @@ IS
 			PIPE ROW(v_out_row);
 			v_Offset := REGEXP_INSTR(v_Clob, v_Table_Pattern, v_Offset, 1, 1, 'in');
 		end loop;
-        if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- Pipe_Record_types table types done');       
-        end if;
         -- varray types
 		v_Offset := 1;
 		for ind in 1..1000 loop
@@ -1511,9 +1604,6 @@ IS
 			PIPE ROW(v_out_row);
 			v_Offset := REGEXP_INSTR(v_Clob, v_Varray_Pattern, v_Offset, 1, 1, 'in');
 		end loop;
-        if g_debug then
-            Log_Elapsed_Time(v_Timemark, '-- Pipe_Record_types table varray done');       
-        end if;
 		-- pl/sql table types
 		v_Offset := 1;
 		for ind in 1..1000 loop
@@ -1593,18 +1683,6 @@ IS
 		v_Item_Type VARCHAR2(512);
 		v_Item_Count PLS_INTEGER := 0;
     BEGIN 
-		if g_debug then
-			DBMS_OUTPUT.PUT_LINE('API call: ' || 'package_tracer.get_record_fields('
-				 || 'p_Package_Name=>' || api_trace.Literal(p_Package_Name)
-				 || ', p_Package_Owner=>' || api_trace.Literal(p_Package_Owner)
-				 || ', p_Type_Name=>' || api_trace.Literal(p_Type_Name)
-				 || ', p_Type_Owner=>' || api_trace.Literal(p_Type_Owner)
-				 || ', p_Type_Subname=>' || api_trace.Literal(p_Type_Subname)
-				 || ', p_Variable_Name=>' || api_trace.Literal(p_Variable_Name)
-				 || ', p_Owner=>' || api_trace.Literal(p_Owner) || chr(10)
-				 || ', p_Nested_Table=>' || api_trace.Literal(p_Nested_Table)
-				 || ', p_In_Out=>' || api_trace.Literal(p_In_Out) || ')');
-		end if;
 		for cur in (
 			select DISTINCT S.Item_Name, S.Item_Sequence, 
 				S.Item_Type, S.Table_Type, S.Nested_Table,
@@ -1667,10 +1745,6 @@ IS
 		if  v_Result IS NULL then 
 			v_Result := p_Variable_Name;
 		end if;
-		if g_debug then
-			DBMS_OUTPUT.PUT_LINE('API exit: ' || 'package_tracer.get_record_fields'
-				 || ' Returns ' || api_trace.Literal(v_Result));
-		end if;
 		return v_Result;
     END Get_Record_Fields;
 
@@ -1691,16 +1765,6 @@ IS
 		v_function_name VARCHAR2(512);
 		v_Sequence PLS_INTEGER := 0;
     BEGIN 
-		if g_debug then
-			DBMS_OUTPUT.PUT_LINE('API call: ' || 'package_tracer.get_table_conversion('
-				 || 'p_Package_Name=>' || api_trace.Literal(p_Package_Name)
-				 || ', p_Package_Owner=>' || api_trace.Literal(p_Package_Owner)
-				 || ', p_Type_Name=>' || api_trace.Literal(p_Type_Name)
-				 || ', p_Type_Owner=>' || api_trace.Literal(p_Type_Owner)
-				 || ', p_Type_Subname=>' || api_trace.Literal(p_Type_Subname)
-				 || ', p_Object_Name=>' || api_trace.Literal(p_Object_Name)
-				 || ', p_In_Out=>' || api_trace.Literal(p_In_Out) || ')');
-		end if;
 		for cur in (
 			select DISTINCT S.Type_Name, S.Item_Sequence, 
 				S.Item_Type, S.Table_Type,
@@ -1719,18 +1783,6 @@ IS
             and S.Nested_Table = 'Y'
 			order by S.Item_Sequence
 		) loop
-			if g_debug then
-				DBMS_OUTPUT.PUT_LINE('API loop: ' 
-					 || ', p_Type_Name=>' || api_trace.Literal(cur.Type_Name)
-					 || ', Item_Sequence=>' || api_trace.Literal(cur.Item_Sequence)
-					 || ', Item_Type=>' || api_trace.Literal(cur.Item_Type)
-					 || ', Table_Type=>' || api_trace.Literal(cur.Table_Type)
-					 || ', Package_Name=>' || api_trace.Literal(cur.Package_Name)
-					 || ', Package_Owner=>' || api_trace.Literal(cur.Package_Owner)
-					 || ', SUB_Table_Type=>' || api_trace.Literal(cur.SUB_Table_Type)
-					 || ', Index_By=>' || api_trace.Literal(cur.Index_By)
-				);
-			end if;
 			if v_Sequence != cur.Item_Sequence then 
 				v_Sequence := cur.Item_Sequence;
 				v_Result := v_Result || Get_Table_Conversion(
@@ -1781,11 +1833,6 @@ IS
 				|| 	'end;';
 			end if;
 		end loop;			
-		if g_debug then
-			DBMS_OUTPUT.PUT_LINE('API exit: ' || 'package_tracer.get_table_conversion'
-				 || ', p_Type_Subname=>' || api_trace.Literal(p_Type_Subname)
-				 || ' Returns ' || api_trace.Literal(v_Result));
-		end if;
 		return v_Result;
     END Get_Table_Conversion;
 
@@ -1794,7 +1841,7 @@ IS
         p_Object_Owner IN VARCHAR2,
         p_Editionable  IN VARCHAR2,
         p_Package_Name IN VARCHAR2,
-        p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
+        p_Package_Owner  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
         p_Logging_Start_Enabled VARCHAR2 DEFAULT 'N', --Y/N
         p_Logging_Start_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Start_Call,
         p_Logging_Finish_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Exit_Call,
@@ -1835,7 +1882,7 @@ IS
                         CASE WHEN A.TYPE_NAME IS NOT NULL THEN 
                             CASE WHEN A.DATA_TYPE = 'REF' THEN ' ref ' END
                             || CASE WHEN (S.SYNONYM_NAME IS NULL OR A.TYPE_OBJECT_TYPE = 'PACKAGE')
-                            	AND TYPE_OWNER NOT IN (p_Dest_Schema, 'PUBLIC') THEN TYPE_OWNER||'.' END 
+                            	AND TYPE_OWNER NOT IN (p_Package_Owner, 'PUBLIC') THEN TYPE_OWNER||'.' END 
                             || A.TYPE_NAME 
                             || CASE WHEN A.TYPE_SUBNAME IS NOT NULL THEN '.'||A.TYPE_SUBNAME END 
                         WHEN A.DATA_TYPE = 'REF CURSOR' THEN 'SYS_REFCURSOR' 
@@ -1846,7 +1893,7 @@ IS
                 FROM SYS.ALL_ARGUMENTS A
                 LEFT OUTER JOIN SYS.All_Synonyms S 
                 	ON S.SYNONYM_NAME = A.TYPE_NAME
-					AND S.OWNER IN (p_Dest_Schema, 'PUBLIC') -- important
+					AND S.OWNER IN (p_Package_Owner, 'PUBLIC') -- important
 					AND S.TABLE_NAME = A.TYPE_NAME
 				LEFT OUTER JOIN TYPES_Q T 
 					ON A.TYPE_NAME = T.PACKAGE_NAME
@@ -1875,7 +1922,7 @@ IS
                         AS ARG_DECLARE_IN,
                         LISTAGG(case when NESTED_TABLE = 'Y'
                         		then 
-									package_tracer.Get_Table_Conversion (
+									Get_Table_Conversion (
 										p_Package_Name => PACKAGE_NAME,
 										p_Package_Owner => OWNER,
 										p_Type_Name => TYPE_NAME,
@@ -1887,7 +1934,7 @@ IS
                         		end
                          		|| case when NESTED_TABLE = 'Y'
                         		and IN_OUT = 'IN/OUT' then 
-									package_tracer.Get_Table_Conversion (
+									Get_Table_Conversion (
 										p_Package_Name => PACKAGE_NAME,
 										p_Package_Owner => OWNER,
 										p_Type_Name => TYPE_NAME,
@@ -1906,7 +1953,7 @@ IS
 										|| ARGUMENT_NAME 
 										|| ' := '
 										|| ARGUMENT_TYPE || '('
-										|| package_tracer.Get_Record_Fields (
+										|| Get_Record_Fields (
 												p_Package_Name => PACKAGE_NAME,
 												p_Package_Owner => OWNER,
 												p_Type_Name => TYPE_NAME,
@@ -1923,7 +1970,7 @@ IS
                          			then  
 										'FOR idx IN 1 .. ' || ARGUMENT_NAME || '.COUNT LOOP' || NL(8)
 										|| ARG_PREFIX || ARGUMENT_NAME || '(idx) := '
-										|| package_tracer.Get_Record_Fields (
+										|| Get_Record_Fields (
 											p_Package_Name => PACKAGE_NAME,
 											p_Package_Owner => OWNER,
 											p_Type_Name => TYPE_NAME,
@@ -1941,7 +1988,7 @@ IS
 										'idx' || A.POSITION || ' := ' || ARGUMENT_NAME || '.FIRST;' || NL(4)
 										|| 'WHILE idx' || A.POSITION || ' IS NOT NULL LOOP' || NL(8)
 										|| ARG_PREFIX || ARGUMENT_NAME || '(idx' || A.POSITION || ') := '
-										|| package_tracer.Get_Record_Fields (
+										|| Get_Record_Fields (
 											p_Package_Name => PACKAGE_NAME,
 											p_Package_Owner => OWNER,
 											p_Type_Name => TYPE_NAME,
@@ -1956,7 +2003,7 @@ IS
 										|| 'idx' || A.POSITION || ' := ' || ARGUMENT_NAME 
 										|| '.NEXT(idx' || A.POSITION || ');' || NL(4)
 										|| 'END LOOP;'
-									when DATA_TYPE IN ('TABLE', 'OBJECT') then
+									when DATA_TYPE IN ('TABLE', 'OBJECT', 'VARRAY') then
 										'select * bulk collect into ' || ARG_PREFIX || ARGUMENT_NAME
 										||' from table (' || ARGUMENT_NAME || ');' 
 									end
@@ -1967,7 +2014,7 @@ IS
                         			case when DATA_TYPE = 'PL/SQL RECORD' then 
 										ARGUMENT_NAME || ' := '
 										|| LOWER(p_Package_Name || '.' || TYPE_SUBNAME) || '('
-										|| package_tracer.Get_Record_Fields (
+										|| Get_Record_Fields (
 												p_Package_Name => PACKAGE_NAME,
 												p_Package_Owner => OWNER,
 												p_Type_Name => TYPE_NAME,
@@ -1983,7 +2030,7 @@ IS
 									then
 										'FOR idx IN 1 .. ' || ARGUMENT_NAME || '.COUNT LOOP' || NL(8)
 										|| ARGUMENT_NAME || '(idx) := '
-										|| package_tracer.Get_Record_Fields (
+										|| Get_Record_Fields (
 											p_Package_Name => PACKAGE_NAME,
 											p_Package_Owner => OWNER,
 											p_Type_Name => TYPE_NAME,
@@ -2000,7 +2047,7 @@ IS
 										'idx' || A.POSITION || ' := ' || ARG_PREFIX || ARGUMENT_NAME || '.FIRST;' || NL(4)
 										|| 'WHILE idx' || A.POSITION || ' IS NOT NULL LOOP' || NL(8)
 										|| ARGUMENT_NAME || '(' || 'idx' || A.POSITION || ') := '
-										|| package_tracer.Get_Record_Fields (
+										|| Get_Record_Fields (
 											p_Package_Name => PACKAGE_NAME,
 											p_Package_Owner => OWNER,
 											p_Type_Name => TYPE_NAME,
@@ -2079,7 +2126,7 @@ IS
                     AND PRO.SUBPROGRAM_ID = RET.SUBPROGRAM_ID
             LEFT OUTER JOIN RETURN_Q RD -- get return type of functions in destination schema.
                     ON RD.PACKAGE_NAME = p_Package_Name
-                    AND RD.OWNER = p_Dest_Schema
+                    AND RD.OWNER = p_Package_Owner
                     AND PRO.PROCEDURE_NAME = RD.PROCEDURE_NAME
                     AND PRO.SUBPROGRAM_ID = RD.SUBPROGRAM_ID
             LEFT OUTER JOIN ARGUMENTS_Q ARG 
@@ -2126,7 +2173,7 @@ IS
             || 'CREATE OR REPLACE '
             || CASE WHEN p_Editionable = 'Y' THEN 'EDITIONABLE' ELSE 'NONEDITIONABLE' END
             || ' PACKAGE BODY '
-            || Enquote_Name(p_Dest_Schema) || '.'
+            || Enquote_Name(p_Package_Owner) || '.'
             || Enquote_Name(p_Package_Name) || chr(10) 
             || 'IS ' || chr(10);
             dbms_lob.writeappend (v_Clob, length(v_sqltext), v_sqltext);
@@ -2200,7 +2247,7 @@ IS
                 if length(v_sqltext) > 0 then 
                 	if v_proc_tbl(ind).RETURN_NESTED_TABLE = 'Y' then 
                         -- conversion for nested tables
-	               		v_Table_Conversion := package_tracer.Get_Table_Conversion (
+	               		v_Table_Conversion := Get_Table_Conversion (
                         	p_Package_Name => v_proc_tbl(ind).OBJECT_NAME,
                         	p_Package_Owner => v_proc_tbl(ind).OWNER,
 							p_Type_Name => v_proc_tbl(ind).RETURN_TYPE_NAME,
@@ -2257,7 +2304,7 @@ IS
 						|| 'lv_idx := lv_temp.FIRST;' || NL(4)
 						|| 'WHILE lv_idx IS NOT NULL LOOP' || NL(8)
 						|| p_Variable_Name || '(lv_idx) := '
-                        || package_tracer.Get_Record_Fields (
+                        || Get_Record_Fields (
 							p_Package_Name => p_Object_Name,
 							p_Package_Owner => p_Object_Owner,
 							p_Type_Name => v_proc_tbl(ind).RETURN_TYPE_NAME,
@@ -2313,7 +2360,7 @@ IS
                         || ';' || chr(10) 
                         || '    '||p_Variable_Name||' := ' || v_proc_tbl(ind).DEST_RETURN_TYPE 
                         || '(' 
-                        || package_tracer.Get_Record_Fields (
+                        || Get_Record_Fields (
                         	p_Package_Name => p_Object_Name,
                         	p_Package_Owner => p_Object_Owner,
 							p_Type_Name => v_proc_tbl(ind).RETURN_TYPE_NAME,
@@ -2533,7 +2580,7 @@ IS
             p_Object_Owner => v_Package_Owner_Out,
             p_Editionable => v_Editionable_Out,
             p_Package_Name => p_Package_Name,
-            p_Dest_Schema => p_Dest_Schema,
+            p_Package_Owner => p_Dest_Schema,
             p_Synonym_Text => v_Synonym_Text
         );
         if dbms_lob.getlength(v_Clob) = 0 or v_Clob IS NULL then 
@@ -2566,7 +2613,7 @@ IS
             p_Object_Owner => v_Package_Owner_Out,
             p_Editionable => v_Editionable_Out,
             p_Package_Name => p_Package_Name,
-            p_Dest_Schema => p_Dest_Schema,
+            p_Package_Owner => p_Dest_Schema,
             p_Logging_Start_Enabled => p_Logging_Start_Enabled,
             p_Logging_Start_Call => p_Logging_Start_Call,
             p_Logging_Finish_Call => p_Logging_Finish_Call,
@@ -2756,17 +2803,12 @@ IS
 END package_tracer;
 /
 
-begin 
-	package_tracer.Launch_Refresh_Job;
-end;
-/
-
 /*
+-- Examples:
+exec package_tracer.Launch_Refresh_Job;
 
-- Examples:
 GRANT EXECUTE ON APEX_190100.WWV_FLOW_SECURITY TO HR_DATA;
 
- 
 set serveroutput on size unlimited
 call package_tracer.Enable('APEX_LANG');
 call package_tracer.Enable('APEX_UTIL');

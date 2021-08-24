@@ -270,16 +270,20 @@ IS
     -- helper query for listing the procedures with parameters of a package
     FUNCTION Dyn_Log_Call_List (
         p_Package_Name IN VARCHAR2,
-        p_Dest_Schema  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
+        p_Package_Owner  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
         p_Compact IN VARCHAR2 DEFAULT 'Y', --Y/N
         p_Logging_Start_Enabled VARCHAR2 DEFAULT 'N', --Y/N
         p_Logging_Start_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Start_Call,
         p_Logging_Finish_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_Exit_Call,
         p_Logging_API_Call IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_API_Call,
+        p_Logging_Exception_Enabled VARCHAR2 DEFAULT 'N', --Y/N
+        p_Logging_API_Exception IN VARCHAR2 DEFAULT api_trace.c_APEX_Logging_API_Exception,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_result',
         p_Condition_Start IN VARCHAR2 DEFAULT c_APEX_Condition_Start,
         p_Condition_End IN VARCHAR2 DEFAULT c_APEX_Condition_End,
         p_Condition_Enabled VARCHAR2 DEFAULT 'N', --Y/N
+        p_Before_Each_Procedure VARCHAR2 DEFAULT NULL,
+        p_After_Each_Procedure VARCHAR2 DEFAULT NULL,
         p_Indent IN NUMBER DEFAULT 8
     ) RETURN tab_logging_calls PIPELINED;
 
