@@ -440,12 +440,13 @@ IS
     IS
     BEGIN
         for cur in (
-            WITH PA AS (
+            WITH PA AS ( -- Parameters
                 SELECT p_Target_Schema GRANTEE,
                     SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') OWNER
                 FROM DUAL 
             ),
             PKEY_Q AS ( 
+            	-- Add primary key constraints to views. This will enable to APEX Builder to detect the Primary key for forms and reports
                 SELECT 
                     C.TABLE_NAME, C.OWNER TABLE_OWNER, 
                     ', CONSTRAINT ' || Enquote_Name(C.CONSTRAINT_NAME) || ' PRIMARY KEY ('
@@ -460,6 +461,7 @@ IS
                 GROUP BY C.TABLE_NAME, C.OWNER, C.CONSTRAINT_NAME
             ),
             COLS_Q AS (
+            	-- List of Column alias names for views 
                 SELECT TABLE_NAME, LISTAGG(Enquote_Name(COLUMN_NAME), ', ') WITHIN GROUP (ORDER BY COLUMN_ID) TAB_COLUMNS
                 FROM SYS.USER_TAB_COLUMNS
                 GROUP BY TABLE_NAME
@@ -467,72 +469,90 @@ IS
             STATS_Q AS (
                 -- views
                 -------------------------
-                SELECT 'GRANT ' || PRIVS || ' ON ' || S.OWNER || '.' || S.TABLE_NAME || ' TO ' || PA.GRANTEE GRANT_STAT,
-                    'CREATE OR REPLACE VIEW ' || PA.GRANTEE || '.' || S.TABLE_NAME 
+                SELECT 'GRANT ' || PRIVS || ' ON ' || S.OWNER || '.' || S.VIEW_NAME || ' TO ' || PA.GRANTEE GRANT_STAT,
+                    'CREATE OR REPLACE VIEW ' || PA.GRANTEE || '.' || S.VIEW_NAME 
                     || ' (' || S.TAB_COLUMNS || S.PKEY_CONS || ')'
-                    || ' AS SELECT * FROM ' || S.OWNER || '.' || S.TABLE_NAME CREATE_STAT,
-                    'REVOKE ' || PRIVS || ' ON ' || S.OWNER || '.' || S.TABLE_NAME || ' FROM ' || PA.GRANTEE REVOKE_STAT, 
-                    'DROP VIEW ' || PA.GRANTEE || '.' || S.TABLE_NAME DROP_STAT,
-                    S.OWNER, S.TABLE_NAME OBJECT_NAME, 
+                    || ' AS SELECT * FROM ' || S.OWNER || '.' || S.VIEW_NAME CREATE_STAT,
+                    'REVOKE ' || PRIVS || ' ON ' || S.OWNER || '.' || S.VIEW_NAME || ' FROM ' || PA.GRANTEE REVOKE_STAT, 
+                    'DROP VIEW ' || PA.GRANTEE || '.' || S.VIEW_NAME DROP_STAT,
+                    S.OWNER, S.VIEW_NAME OBJECT_NAME, 
                     'VIEW' OBJECT_TYPE, 
                     'VIEW' DEST_OBJECT_TYPE,
-                    FOREIGN_DEPS_CNT
+                    ADMIN_GRANT_STAT
                 FROM (
-                    SELECT CASE WHEN D.FOREIGN_DEPS_CNT > 0 THEN NVL(D.PRIVILEGE, 'READ')
+                    SELECT CASE WHEN DG.FOREIGN_DEPS_CNT > 0 
+                    	THEN NVL(DG.PRIVILEGE, 'READ')
                     	ELSE 
                     		'SELECT' ||
-							CASE WHEN TR.PRIVS IS NOT NULL THEN ', ' || TR.PRIVS
-								ELSE
-									CASE WHEN UPDATABLE > 0     THEN ', UPDATE' END
-									|| CASE WHEN INSERTABLE > 0 THEN ', INSERT' END
-									|| CASE WHEN DELETABLE > 0  THEN ', DELETE' END 
+							CASE WHEN TR.PRIVS IS NOT NULL 
+								THEN ', ' || TR.PRIVS
+								ELSE T.UPDATABLE || T.INSERTABLE || T.DELETABLE
 							END
                         END PRIVS,
-                        T.TABLE_NAME, T.OWNER, 
-                        NVL(D.NOT_GRANTABLE,0) FOREIGN_DEPS_CNT,
+                        NG.ADMIN_GRANT_STAT,
+                        T.VIEW_NAME, T.OWNER, 
                         P.PKEY_CONS, C.TAB_COLUMNS
                     FROM (
-                        SELECT T.TABLE_NAME, T.OWNER,
-                            SUM(CASE WHEN UPDATABLE = 'YES' THEN 1 ELSE 0 END) UPDATABLE,
-                            SUM(CASE WHEN INSERTABLE = 'YES' THEN 1 ELSE 0 END) INSERTABLE,
-                            SUM(CASE WHEN DELETABLE = 'YES' THEN 1 ELSE 0 END) DELETABLE
+                        SELECT V.VIEW_NAME, T.OWNER,
+                            MAX(CASE WHEN UPDATABLE = 'YES' THEN ', UPDATE' END) UPDATABLE,
+                            MAX(CASE WHEN INSERTABLE = 'YES' THEN ', INSERT' END) INSERTABLE,
+                            MAX(CASE WHEN DELETABLE = 'YES' THEN ', DELETE' END) DELETABLE
                         FROM SYS.USER_UPDATABLE_COLUMNS T
-                        WHERE EXISTS (
-                            SELECT 'X'
-                            FROM USER_VIEWS V WHERE V.VIEW_NAME = T.TABLE_NAME
-                        )
-                        GROUP BY TABLE_NAME, OWNER
-                    ) T LEFT OUTER JOIN (
-                    -- when a view is accessing other foreign view, then is view has READ-only access
-                        SELECT NAME, COUNT(*) FOREIGN_DEPS_CNT,
-                        	LISTAGG(CASE WHEN GRANTABLE = 'YES' THEN PRIVILEGE END, ', ') WITHIN GROUP (ORDER BY PRIVILEGE) PRIVILEGE,
-                        	COUNT(CASE WHEN GRANTABLE = 'NO' THEN 1 END) NOT_GRANTABLE
+                        JOIN SYS.USER_VIEWS V ON V.VIEW_NAME = T.TABLE_NAME
+                        GROUP BY V.VIEW_NAME, T.OWNER
+                    ) T LEFT OUTER JOIN ( -- grantable dependent object privileges
+                     -- when a view is accessing other foreign schema view, then is view has READ-only access
+                       SELECT NAME, COUNT(*) FOREIGN_DEPS_CNT,
+                        	LISTAGG(PRIVILEGE, ', ') WITHIN GROUP (ORDER BY PRIVILEGE) PRIVILEGE
                         FROM (
-                            SELECT DISTINCT D.NAME, PRI.PRIVILEGE, NVL(PRI.GRANTABLE, 'NO') GRANTABLE
+                            SELECT DISTINCT D.NAME, PRI.PRIVILEGE
                             FROM SYS.USER_DEPENDENCIES D
-                            LEFT OUTER JOIN SYS.ALL_TAB_PRIVS PRI 
+                            JOIN SYS.ALL_TAB_PRIVS PRI 
                                 ON PRI.table_Schema = D.REFERENCED_OWNER 
                                 AND PRI.table_Name = D.REFERENCED_NAME
                                 AND PRI.grantee IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
                             WHERE D.TYPE = 'VIEW'
                             AND D.REFERENCED_TYPE IN ('VIEW', 'TABLE', 'SYNONYM')
-                            AND D.REFERENCED_OWNER NOT IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
+                            AND D.REFERENCED_OWNER NOT IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')) -- dependent on object in foreign schema 
+                            AND PRI.GRANTABLE = 'YES'
                         )
                         GROUP BY NAME
-                    ) D ON T.TABLE_NAME = D.NAME
-                    LEFT OUTER JOIN (
-                        -- updatable views with INSTEAD OF trigger
+                    ) DG ON T.VIEW_NAME = DG.NAME
+                    LEFT OUTER JOIN ( -- not grantable dependent object privileges
+                        SELECT NAME, COUNT(*) FOREIGN_DEPS_CNT,
+                            LISTAGG(CASE WHEN NOT_GRANTABLE > 0
+                                    THEN 'GRANT ' || PRIVILEGE || ' ON ' || REFERENCED_OWNER || '.' || REFERENCED_NAME 
+                                        || ' TO ' || SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') || ' WITH GRANT OPTION;'
+                                    END, chr(10)) WITHIN GROUP (ORDER BY PRIVILEGE) ADMIN_GRANT_STAT
+                        FROM (
+                            SELECT D.NAME, D.REFERENCED_OWNER, D.REFERENCED_NAME,
+                                LISTAGG(PRI.PRIVILEGE, ', ') WITHIN GROUP (ORDER BY PRIVILEGE) PRIVILEGE,
+                                COUNT(*) NOT_GRANTABLE
+                            FROM SYS.USER_DEPENDENCIES D
+                            JOIN SYS.ALL_TAB_PRIVS PRI 
+                                ON PRI.table_Schema = D.REFERENCED_OWNER 
+                                AND PRI.table_Name = D.REFERENCED_NAME
+                                AND PRI.grantee IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'))
+                            WHERE D.TYPE = 'VIEW'
+                            AND D.REFERENCED_TYPE IN ('VIEW', 'TABLE', 'SYNONYM')
+                            AND D.REFERENCED_OWNER NOT IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')) -- dependent on object in foreign schema 
+                            AND PRI.GRANTABLE = 'NO'
+                            GROUP BY D.NAME, D.REFERENCED_OWNER, D.REFERENCED_NAME
+                        )
+                        GROUP BY NAME
+                    ) NG ON T.VIEW_NAME = NG.NAME
+                    LEFT OUTER JOIN ( -- updatable views with INSTEAD OF trigger
                         SELECT REGEXP_REPLACE(
                             LISTAGG(TRIGGERING_EVENT, ', ') WITHIN GROUP (ORDER BY TRIGGERING_EVENT), 
                             '\sOR\s', ', ') PRIVS,
-                            T.TABLE_NAME
+                            T.TABLE_NAME VIEW_NAME
                         FROM SYS.USER_TRIGGERS T
                         WHERE TRIGGER_TYPE = 'INSTEAD OF'
                         AND BASE_OBJECT_TYPE = 'VIEW'
                         GROUP BY TABLE_NAME
-                    ) TR ON T.TABLE_NAME = TR.TABLE_NAME
-                    LEFT OUTER JOIN PKEY_Q P ON T.TABLE_NAME = P.TABLE_NAME
-                    LEFT OUTER JOIN COLS_Q C ON T.TABLE_NAME = C.TABLE_NAME
+                    ) TR ON T.VIEW_NAME = TR.VIEW_NAME
+                    LEFT OUTER JOIN PKEY_Q P ON T.VIEW_NAME = P.TABLE_NAME
+                    LEFT OUTER JOIN COLS_Q C ON T.VIEW_NAME = C.TABLE_NAME
                 ) S, PA
                 WHERE PA.GRANTEE IS NOT NULL
                 UNION ALL   
@@ -550,7 +570,7 @@ IS
                     PA.OWNER, T.TABLE_NAME OBJECT_NAME, 
                     'TABLE' OBJECT_TYPE, 
                     'VIEW' DEST_OBJECT_TYPE,
-                    0 FOREIGN_DEPS_CNT
+                    '' ADMIN_GRANT_STAT
                 FROM (
                     SELECT T.TABLE_NAME,
                         CASE WHEN READ_ONLY = 'NO'
@@ -588,7 +608,7 @@ IS
                     PA.OWNER, T.OBJECT_NAME, 
                     T.OBJECT_TYPE, 
                     'SYNONYM' DEST_OBJECT_TYPE,
-                    0 FOREIGN_DEPS_CNT
+                    '' ADMIN_GRANT_STAT
                 FROM SYS.USER_OBJECTS T, PA
                 WHERE PA.GRANTEE IS NOT NULL
                 AND T.OBJECT_TYPE IN ('FUNCTION','PROCEDURE','PACKAGE','TYPE')
@@ -601,12 +621,12 @@ IS
                     PA.OWNER, T.SEQUENCE_NAME OBJECT_NAME, 
                     'SEQUENCE' OBJECT_TYPE, 
                     'SYNONYM' DEST_OBJECT_TYPE,
-                    0 FOREIGN_DEPS_CNT
+                    '' ADMIN_GRANT_STAT
                 FROM SYS.USER_SEQUENCES T, PA
                 WHERE PA.GRANTEE IS NOT NULL
             ), MAIN_Q AS (
                 SELECT S.OWNER, S.OBJECT_NAME, S.OBJECT_TYPE, S.DEST_OBJECT_TYPE,
-                    S.FOREIGN_DEPS_CNT, 
+                    S.ADMIN_GRANT_STAT, 
                     case when EXISTS (
                             SELECT 1 
                             FROM SYS.ALL_DEPENDENCIES D
@@ -634,10 +654,10 @@ IS
                     S.GRANT_STAT, S.CREATE_STAT, S.REVOKE_STAT, S.DROP_STAT
                 FROM STATS_Q S
             )
-            SELECT S.OWNER, S.OBJECT_NAME, S.OBJECT_TYPE, S.DEST_OBJECT_TYPE, S.FOREIGN_DEPS_CNT, 
+            SELECT S.OWNER, S.OBJECT_NAME, S.OBJECT_TYPE, S.DEST_OBJECT_TYPE, S.ADMIN_GRANT_STAT, 
                 S.DEST_OBJECT_EXISTS, S.CONFLICTING_OBJECT_EXISTS, S.DEST_SCHEMA, 
                 S.GRANT_STAT, S.CREATE_STAT, S.REVOKE_STAT, S.DROP_STAT,
-                case when CONFLICTING_OBJECT_EXISTS = 'N' then 
+                case when CONFLICTING_OBJECT_EXISTS = 'N' AND ADMIN_GRANT_STAT IS NULL then 
                     APEX_ITEM.HIDDEN (p_idx => 1, p_value => OBJECT_NAME, p_item_id => 'f01_'||ROWNUM, p_item_label => 'ROW_SELECTOR$')
                     || APEX_ITEM.SWITCH (p_idx => 2,  p_value => DEST_OBJECT_EXISTS, p_item_id => 'f02_'||ROWNUM, p_item_label => 'SWITCH_ENABLED') 
                     || APEX_ITEM.HIDDEN (p_idx => 3, p_value => DEST_OBJECT_EXISTS, p_item_id => 'f03_' || ROWNUM) 
@@ -645,7 +665,6 @@ IS
                     || APEX_ITEM.HIDDEN (p_idx => 5, p_value => CREATE_STAT, p_item_id => 'f05_' || ROWNUM) 
                     || APEX_ITEM.HIDDEN (p_idx => 6, p_value => REVOKE_STAT, p_item_id => 'f06_' || ROWNUM) 
                     || APEX_ITEM.HIDDEN (p_idx => 7, p_value => DROP_STAT, p_item_id => 'f07_' || ROWNUM) 
-                    || APEX_ITEM.HIDDEN (p_idx => 8, p_value => FOREIGN_DEPS_CNT, p_item_id => 'f08_' || ROWNUM) 
                 end IS_ENABLED_SWITCH
             FROM MAIN_Q S
         ) loop 
@@ -653,29 +672,6 @@ IS
         end loop;
         return;
     END get_publish_schema;
-
-    PROCEDURE Copy_View (
-        p_View_Name IN VARCHAR2,
-        p_Dest_Schema IN VARCHAR2 
-    )
-    is  
-        v_sql_text CLOB;
-    begin
-        for c in (
-            SELECT TEXT,
-                (SELECT LISTAGG( Enquote_Name(COLUMN_NAME), ', ') WITHIN GROUP (ORDER BY COLUMN_ID) COLS 
-                FROM SYS.USER_TAB_COLS C
-                WHERE C.TABLE_NAME = A.VIEW_NAME
-                GROUP BY C.TABLE_NAME) COLS
-            FROM SYS.USER_VIEWS A WHERE VIEW_NAME = p_View_Name
-        ) loop
-            v_sql_text := 'CREATE OR REPLACE VIEW ' 
-            || Enquote_Name(p_Dest_Schema) || '.' || Enquote_Name(p_View_Name) 
-            || ' ( ' || c.COLS || ' ) '
-            || chr(10) || 'AS ' ||  c.text;
-            EXECUTE IMMEDIATE v_sql_text;
-        end loop;
-    end Copy_View;
 
     PROCEDURE Log_Elapsed_Time (
         p_Timemark IN OUT NUMBER,
@@ -933,6 +929,30 @@ IS
     	return p_Result;
     end Replace_Substitution;
     
+    FUNCTION Logging_Call_Parameter (
+    	p_Logging_Call IN VARCHAR2,
+    	p_Default_Call IN VARCHAR2,
+    	p_Overload IN INTEGER
+    ) return VARCHAR2 DETERMINISTIC
+    is
+        $IF DBMS_DB_VERSION.VERSION >= 12 $THEN
+            PRAGMA UDF;
+        $END
+    	p_Result VARCHAR2(32767);
+    begin
+    	if p_Overload IS NOT NULL or p_Logging_Call != p_Default_Call then 
+    		if p_Logging_Call != p_Default_Call then 
+    			p_Result := 'p_Logging_Call => ' || Enquote_Literal( p_Logging_Call ); 
+    		end if;
+    		if p_Overload is not null then 
+    			p_Result := p_Result || case when p_Result IS NOT NULL then ', ' end
+    			|| 'p_Overload => ' || p_Overload; 
+    		end if;
+    		p_Result := '(' || p_Result || ')';
+    	end if;
+    	return p_Result;
+    end Logging_Call_Parameter;
+    
     FUNCTION Dyn_Log_Call_List (
         p_Package_Name IN VARCHAR2,
         p_Package_Owner  IN VARCHAR2 DEFAULT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'),
@@ -955,7 +975,6 @@ IS
     IS
         v_Package_Name VARCHAR2(128) := UPPER(p_Package_Name);
         v_Package_Owner VARCHAR2(128) := p_Package_Owner;
-        v_Begin CONSTANT VARCHAR2(1000) := NL(p_Indent) || 'begin';
         v_Condition_Start CONSTANT VARCHAR2(1000) := case when p_Condition_Start IS NOT NULL and p_Condition_Enabled = 'Y' then NL(p_Indent + 4) || p_Condition_Start end;
         v_Condition_End CONSTANT VARCHAR2(1000) := case when p_Condition_End IS NOT NULL and p_Condition_Enabled = 'Y' then NL(p_Indent + 4) || p_Condition_End end;
 		v_Indent NUMBER := case when v_Condition_End IS NOT NULL then p_Indent + 8 ELSE p_Indent + 4 end;
@@ -1219,7 +1238,7 @@ IS
             	case when RET.RETURN_TYPE IS NOT NULL then 
             		NL(p_Indent + 4) || p_Variable_Name || ' ' || LOWER(RET.RETURN_TYPE) || ';'
             	end
-            	|| v_Begin
+            	|| NL(p_Indent) || 'begin'
 				AS PRO_BEGIN,
 				case when RETURN_TYPE IS NOT NULL
             		and PRO.PIPELINED = 'NO'
@@ -2818,13 +2837,4 @@ call package_tracer.Disable('APEX_UTIL');
 
 select * from table(package_tracer.Dyn_Log_Call_List ('APEX_LANG'));
 
--- uninstall:
-DROP Type STATEMENT_AGG_TYPE;
-/
-DROP Function STATEMENT_AGG;
-/
-DROP Package PACKAGE_TRACER;
-/
-DROP MATERIALIZED VIEW MV_PACKAGE_RECORD_TYPES;
-/
 */

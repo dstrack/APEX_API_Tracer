@@ -219,7 +219,7 @@ IS
         OBJECT_NAME     VARCHAR2(128), 
         OBJECT_TYPE     VARCHAR2(128), 
         DEST_OBJECT_TYPE VARCHAR2(128),
-        FOREIGN_DEPS_CNT        NUMBER,
+        ADMIN_GRANT_STAT VARCHAR2(4000),
         DEST_OBJECT_EXISTS VARCHAR2(3),
         CONFLICTING_OBJECT_EXISTS  VARCHAR2(3),
         DEST_SCHEMA     VARCHAR2(128),
@@ -235,11 +235,6 @@ IS
         p_Target_Schema IN VARCHAR2 
     )
     RETURN tab_publish_schema PIPELINED;
-
-    PROCEDURE Copy_View (
-        p_View_Name IN VARCHAR2,
-        p_Dest_Schema IN VARCHAR2 
-    );
 
     FUNCTION Is_Printable_DATA_Type (
         p_Data_Type IN VARCHAR2
@@ -267,6 +262,11 @@ IS
     	p_Package_Name IN VARCHAR2,
     	p_Return_Type IN VARCHAR2
     ) return VARCHAR2;
+    FUNCTION Logging_Call_Parameter (
+    	p_Logging_Call IN VARCHAR2,
+    	p_Default_Call IN VARCHAR2,
+    	p_Overload IN INTEGER
+    ) return VARCHAR2 DETERMINISTIC;
     -- helper query for listing the procedures with parameters of a package
     FUNCTION Dyn_Log_Call_List (
         p_Package_Name IN VARCHAR2,

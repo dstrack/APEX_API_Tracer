@@ -52,21 +52,32 @@ IS
        execute with apex_debug: EXECUTE IMMEDIATE api_trace.Dyn_Log_Call USING <param...>
        the count of the arguments will be checked at runtime.
     */
+
+	-- log function or procedure call with all arguments
     FUNCTION Dyn_Log_Call(
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,	-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2; 
+	-- log function call with all arguments and return value
+    FUNCTION Dyn_Log_Function_Call(
+        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call, -- string with a %s placeholder for the call arguments.
+        p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
+        p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
+    ) RETURN VARCHAR2;
+	-- log function or procedure call with all IN or IN/OUT arguments
     FUNCTION Dyn_Log_Start (
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2;
+	-- log function or procedure call with all OUT or IN/OUT arguments
     FUNCTION Dyn_Log_Exit (
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2;
+	-- log function exception with all arguments and error stack
     FUNCTION Dyn_Log_Exception (
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
@@ -312,8 +323,9 @@ IS
     	RETURN 'begin ' || replace(p_Logging_Call, '%s', p_Call_Parameter) || ' end;';
     END Format_Call;
     
+	-- log function or procedure call with all arguments
     FUNCTION Dyn_Log_Call(
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,   -- string with a %s placeholder for the call arguments.
+        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,   	 -- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                      -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                                  -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2
@@ -335,6 +347,32 @@ IS
         end if;
     END Dyn_Log_Call; 
 
+	-- log function call with all arguments and return value
+    FUNCTION Dyn_Log_Function_Call(
+        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,   	 -- string with a %s placeholder for the call arguments.
+        p_value_max_length IN INTEGER DEFAULT 1000,                      -- maximum length of an single procedure argument value in the log message
+        p_overload IN INTEGER DEFAULT 0                                  -- identifier of a overloded funtion in order of occurence.
+    ) RETURN VARCHAR2
+    IS
+        c_calling_subprog constant varchar2(512) := lower(utl_call_stack.concatenate_subprogram(utl_call_stack.subprogram(2))); 
+        v_result_str VARCHAR2(32767);
+    BEGIN
+        v_result_str := Format_Call_Parameter( 
+            p_calling_subprog => c_calling_subprog,
+            p_value_max_length => p_value_max_length,
+            p_bind_char => ':',
+            p_overload => p_overload,
+            p_in_out => 'IN/OUT',
+            p_return_variable => 'v_result'
+        );
+        if p_Logging_Call IS NOT NULL then 
+            return Format_Call(p_Logging_Call=>p_Logging_Call, p_Call_Parameter=>v_result_str);
+        else
+            return v_result_str;
+        end if;
+    END Dyn_Log_Function_Call; 
+
+	-- log function or procedure call with all IN or IN/OUT arguments
     FUNCTION Dyn_Log_Start (
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
@@ -358,6 +396,7 @@ IS
         end if;
     END Dyn_Log_Start; 
 
+	-- log function or procedure call with all OUT or IN/OUT arguments
     FUNCTION Dyn_Log_Exit (
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
@@ -381,6 +420,7 @@ IS
         end if;
     END Dyn_Log_Exit; 
     
+	-- log function exception with all arguments and error stack
     FUNCTION Dyn_Log_Exception (
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
