@@ -240,14 +240,24 @@ IS
         p_Data_Type IN VARCHAR2
     ) RETURN VARCHAR2 DETERMINISTIC;
     
-    FUNCTION Format_Call_Parameter(
+	FUNCTION Formatted_Name(p_arg_name VARCHAR2) RETURN VARCHAR2; 
+
+	FUNCTION Literal_Call (
+		p_Argument_Name VARCHAR2, 
+		p_Formatted_Name VARCHAR2,
+		p_Data_Type VARCHAR2,
+		p_Record_Conversion VARCHAR2 DEFAULT NULL,
+		p_value_max_length INTEGER DEFAULT api_trace.c_value_max_length
+	) RETURN VARCHAR2; 
+
+    FUNCTION Format_Call_Parameter (
         p_Object_Name IN VARCHAR2,
         p_Object_Owner IN VARCHAR2,
         p_Procedure_Name IN VARCHAR2,
         p_Subprogram_ID IN NUMBER,
         p_calling_subprog VARCHAR2,
         p_synonym_name VARCHAR2 DEFAULT NULL,
-        p_value_max_length INTEGER DEFAULT 1000,
+        p_value_max_length INTEGER DEFAULT api_trace.c_value_max_length,
         p_bind_char VARCHAR2 DEFAULT ':',
         p_overload INTEGER DEFAULT 0,
         p_in_out VARCHAR2 DEFAULT 'IN/OUT', -- IN, OUT, IN/OUT
@@ -344,6 +354,16 @@ IS
         p_Type_Subname IN VARCHAR2,
         p_Object_Name IN VARCHAR2,
         p_In_Out IN VARCHAR2
+    ) RETURN VARCHAR2;
+
+    FUNCTION Get_Record_Conversion (
+        p_Package_Name IN VARCHAR2,
+        p_Package_Owner IN VARCHAR2,
+        p_Type_Name IN VARCHAR2,
+        p_Type_Owner IN VARCHAR2, 
+        p_Type_Subname IN VARCHAR2,
+        p_Object_Name IN VARCHAR2,
+        p_In_Out IN VARCHAR2 DEFAULT 'IN'
     ) RETURN VARCHAR2;
 
     PROCEDURE Enable (

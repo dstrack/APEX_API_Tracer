@@ -21,26 +21,27 @@ IS
     -- p_level=>5; -- application: messages when procedures/functions are entered
     -- p_level=>6; -- application: other messages within procedures/functions
     c_format_max_length CONSTANT NUMBER := 32700;
+    c_value_max_length  CONSTANT NUMBER := 1000;
 	c_Package_Name             CONSTANT VARCHAR2(128) := lower($$plsql_unit);
-    FUNCTION Literal ( p_Text VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal ( p_Text VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC;
-    FUNCTION Literal ( p_Value BLOB, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal ( p_Value BLOB, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC;
-    FUNCTION Literal ( p_Value CLOB, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal ( p_Value CLOB, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC;
-    FUNCTION Literal ( p_Value BOOLEAN, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal ( p_Value BOOLEAN, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC;
-    FUNCTION Literal ( p_Value NUMBER, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal ( p_Value NUMBER, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC;
-    FUNCTION Literal_RAW ( p_Value RAW, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal_RAW ( p_Value RAW, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC;
-    FUNCTION Literal_PWD ( p_Value VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal_PWD ( p_Value VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC;
 
     FUNCTION Format_Call_Parameter(
         p_calling_subprog VARCHAR2,             -- name of the called procedure or function in a package format: owner.package_name.procedure_name
         p_synonym_name VARCHAR2 DEFAULT NULL,   -- optional name of the procedure in the log message
-        p_value_max_length INTEGER DEFAULT 1000,-- maximum length of an single procedure argument value in the log message
+        p_value_max_length INTEGER DEFAULT c_value_max_length,-- maximum length of an single procedure argument value in the log message
         p_bind_char VARCHAR2 DEFAULT ':',       -- optional bind char that will help to produce bind variables for use with EXECUTE IMMEDIATE
         p_overload INTEGER DEFAULT 0,           -- identifier of a overloded funtion in order of occurence.
         p_in_out VARCHAR2 DEFAULT 'IN/OUT',     -- IN, OUT, IN/OUT. Used to filter the set of procedure arguments that are logged in the message.
@@ -56,31 +57,31 @@ IS
 	-- log function or procedure call with all arguments
     FUNCTION Dyn_Log_Call(
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,	-- string with a %s placeholder for the call arguments.
-        p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
+        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2; 
 	-- log function call with all arguments and return value
     FUNCTION Dyn_Log_Function_Call(
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call, -- string with a %s placeholder for the call arguments.
-        p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
+        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2;
 	-- log function or procedure call with all IN or IN/OUT arguments
     FUNCTION Dyn_Log_Start (
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,-- string with a %s placeholder for the call arguments.
-        p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
+        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2;
 	-- log function or procedure call with all OUT or IN/OUT arguments
     FUNCTION Dyn_Log_Exit (
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.
-        p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
+        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2;
 	-- log function exception with all arguments and error stack
     FUNCTION Dyn_Log_Exception (
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- string with a %s placeholder for the call arguments.
-        p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
+        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0,                             -- identifier of a overloded funtion in order of occurence.
         p_format_error_function IN VARCHAR2 DEFAULT 'DBMS_UTILITY.FORMAT_ERROR_STACK' -- function for formating for the current error. The output is concatinated to the message.
     ) RETURN VARCHAR2;
@@ -92,14 +93,14 @@ CREATE OR REPLACE PACKAGE BODY api_trace
 IS
     c_Quote CONSTANT VARCHAR2(1) := chr(39);	-- Quote Character
 
-    FUNCTION Literal ( p_Text VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal ( p_Text VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC
     IS
     BEGIN
         RETURN c_Quote || replace(substr(p_Text, 1, p_value_max_length), c_Quote, c_Quote||c_Quote) || c_Quote ;
     END Literal;
     
-    FUNCTION Literal ( p_Value BLOB, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal ( p_Value BLOB, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC
     IS
     BEGIN
@@ -108,7 +109,7 @@ IS
         end;
     END Literal;
     
-    FUNCTION Literal ( p_Value CLOB, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal ( p_Value CLOB, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC
     IS
     BEGIN
@@ -117,7 +118,7 @@ IS
         end;
     END Literal;
 
-    FUNCTION Literal ( p_Value BOOLEAN, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal ( p_Value BOOLEAN, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC
     IS
     BEGIN
@@ -125,7 +126,7 @@ IS
           when p_Value then 'true' else 'false' end ;
     END Literal;
 
-    FUNCTION Literal ( p_Value NUMBER, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal ( p_Value NUMBER, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC
     IS
     BEGIN
@@ -134,7 +135,7 @@ IS
         end;
     END Literal;
 
-    FUNCTION Literal_RAW ( p_Value RAW, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal_RAW ( p_Value RAW, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC
     IS
     BEGIN
@@ -143,7 +144,7 @@ IS
         end;
     END Literal_RAW;
 
-    FUNCTION Literal_PWD ( p_Value VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT 1000 )
+    FUNCTION Literal_PWD ( p_Value VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC
     IS
     BEGIN
@@ -158,7 +159,7 @@ IS
     FUNCTION Format_Call_Parameter(
         p_calling_subprog VARCHAR2,             -- name of the called procedure or function in a package format: package_name.procedure_name
         p_synonym_name VARCHAR2 DEFAULT NULL,   -- optional name of the procedure in the log message
-        p_value_max_length INTEGER DEFAULT 1000,-- maximum length of an single procedure argument value in the log message
+        p_value_max_length INTEGER DEFAULT c_value_max_length,-- maximum length of an single procedure argument value in the log message
         p_bind_char VARCHAR2 DEFAULT ':',       -- optional bind char that will help to produce bind variables for use with EXECUTE IMMEDIATE
         p_overload INTEGER DEFAULT 0,           -- identifier of a overloded funtion in order of occurence.
         p_in_out VARCHAR2 DEFAULT 'IN/OUT',     -- IN, OUT, IN/OUT. Used to filter the set of procedure arguments that are logged in the message.
@@ -231,7 +232,7 @@ IS
 						else 'Literal' 
 					end
 					|| '(' || p_bind_char || p_Formatted_Name 
-					|| case when p_value_max_length != 1000 then ', ' || p_value_max_length end
+					|| case when p_value_max_length != c_value_max_length then ', ' || p_value_max_length end
 					|| ')'
 				else 
 					Literal('<datatype '||p_Data_Type||'>')
@@ -326,7 +327,7 @@ IS
 	-- log function or procedure call with all arguments
     FUNCTION Dyn_Log_Call(
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,   	 -- string with a %s placeholder for the call arguments.
-        p_value_max_length IN INTEGER DEFAULT 1000,                      -- maximum length of an single procedure argument value in the log message
+        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                      -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                                  -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2
     IS
@@ -350,7 +351,7 @@ IS
 	-- log function call with all arguments and return value
     FUNCTION Dyn_Log_Function_Call(
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,   	 -- string with a %s placeholder for the call arguments.
-        p_value_max_length IN INTEGER DEFAULT 1000,                      -- maximum length of an single procedure argument value in the log message
+        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                      -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                                  -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2
     IS
@@ -375,7 +376,7 @@ IS
 	-- log function or procedure call with all IN or IN/OUT arguments
     FUNCTION Dyn_Log_Start (
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,-- string with a %s placeholder for the call arguments.
-        p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
+        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2
     IS
@@ -399,7 +400,7 @@ IS
 	-- log function or procedure call with all OUT or IN/OUT arguments
     FUNCTION Dyn_Log_Exit (
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.
-        p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
+        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2
     IS
@@ -423,7 +424,7 @@ IS
 	-- log function exception with all arguments and error stack
     FUNCTION Dyn_Log_Exception (
         p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- string with a %s placeholder for the call arguments.
-        p_value_max_length IN INTEGER DEFAULT 1000,                 -- maximum length of an single procedure argument value in the log message
+        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0,                             -- identifier of a overloded funtion in order of occurence.
         p_format_error_function IN VARCHAR2 DEFAULT 'DBMS_UTILITY.FORMAT_ERROR_STACK' -- function for formating for the current error. The output is concatinated to the message.
     ) RETURN VARCHAR2
