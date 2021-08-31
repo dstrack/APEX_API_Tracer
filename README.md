@@ -6,8 +6,7 @@ This program can generate a package for tracing automatically when the following
 
   1. the package is accessible to the schema user via a synonym.
   2. the procedure or function is listed in the package header.
-  3. the package defines no pl/sql table types.
-  4. the package header is not wrapped.
+  3. the package header is not wrapped.
 
 The enable - procedure will generate a tracing-package with the same name as the synonym in your local schema.
 
@@ -25,6 +24,8 @@ When the Option 'Logging of Procedure Start' is set to No, then each function an
 
 1. A call to invocate the original procedure or functions. 
 2. A call to APEX_DEBUG.LOG_LONG_MESSAGE to produce log entries for all argument values and function return values of the invocation. Arguments of type IN, OUT, and IN/OUT are logged.
+
+For arguments and return values of type table, pl/sql table, type or varray the Count of rows is logged. For records the record type and individual elements are logged.
 
 For other packages where the above-mentioned conditions do not apply, you can manually add generated code with invocations to the api_trace package to support logging for prepared functions or procedures in your own packages.
 
@@ -51,8 +52,7 @@ In the section 'Trace Code for LOCAL packages'
   The switches 'Compact' and 'Logging of Procedure Start' control the code generation for your need.
   Copy the listed code into your package to enable tracing of your procedures and functions.
   The generated code uses the api_trace.Literal function to convert the passed values to quoted literals.
-  The function api_trace.Literal is overloaded to support many data types. Datatypes that can not be 
-  converted like records are logged with a <datatype x> placeholder. The logged values are truncated to a maximum length (1024 by default).
+  The function api_trace.Literal is overloaded to support many data types. Datatypes that can not be converted are logged with a <datatype x> placeholder. The logged values are truncated to a maximum length (1024 by default).
   There is no upper limit for the number of arguments the you can pass the the api_trace logging functions.
   The compact form of the generated code executed directly with the simple passing of the function arguments list.
   The number of arguments will be checked at runtime to match the count of arguments of the current calling function.

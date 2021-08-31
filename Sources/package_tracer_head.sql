@@ -183,6 +183,7 @@ IS
     ) RETURN tab_synonyms PIPELINED;
     
     TYPE rec_Packages_Control IS RECORD (
+        Synonym_Owner   VARCHAR2(128),
         Synonym_Name    VARCHAR2(128),
         Package_Owner   VARCHAR2(128),
         Package_Name    VARCHAR2(128),
@@ -342,7 +343,6 @@ IS
         p_Type_Subname IN VARCHAR2,
         p_Variable_Name IN VARCHAR2 DEFAULT 'lv_temp',
         p_Owner IN VARCHAR2 DEFAULT NULL,
-        p_Nested_Table IN VARCHAR2 DEFAULT 'N',
         p_In_Out IN VARCHAR2 DEFAULT 'IN'
     ) RETURN VARCHAR2;
 
@@ -461,16 +461,8 @@ FROM (
     join SYS.All_Objects OBJ on SYN.TABLE_NAME = OBJ.OBJECT_NAME and SYN.TABLE_OWNER = OBJ.OWNER
     where Syn.OWNER IN ('PUBLIC', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') )
     and OBJ.OBJECT_TYPE = 'PACKAGE'
-/*    UNION -- local packages
-	-- currently not used
-    select distinct
-        OBJ.OWNER     		 Package_Owner,
-        OBJ.OBJECT_NAME      Package_Name
-    from SYS.All_Objects OBJ 
-    where OBJ.OWNER = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
-    and OBJ.OBJECT_TYPE = 'PACKAGE' */
-) A, table(package_tracer.Pipe_Record_types(p_Package_Name=>A.PACKAGE_NAME, p_Package_Owner=>A.PACKAGE_OWNER)) T
-;
+
+) A, table(package_tracer.Pipe_Record_types(p_Package_Name=>A.PACKAGE_NAME, p_Package_Owner=>A.PACKAGE_OWNER)) T;
 
 CREATE INDEX MV_PACKAGE_RECORD_TYPES_IND1 ON MV_PACKAGE_RECORD_TYPES(Package_Owner, Package_Name, Item_Type, Nested_Table) COMPRESS;
 
