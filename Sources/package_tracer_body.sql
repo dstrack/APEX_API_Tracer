@@ -1408,11 +1408,14 @@ IS
         || chr(10);
         dbms_lob.writeappend (v_Clob, length(v_SQLText), v_SQLText);
         for cur in (
-            SELECT TEXT, LINE
-            FROM SYS.All_Source 
-            where Owner = p_Package_Owner
-            and Name = p_Package_Name
-            and type = p_Type
+        	select TEXT, LINE 
+        	from (
+				SELECT TEXT, LINE, ORIGIN_CON_ID, MIN(ORIGIN_CON_ID) OVER (PARTITION BY Owner, Name, type) MIN_ORIGIN_CON_ID
+				FROM SYS.All_Source 
+				where Owner = p_Package_Owner
+				and Name = p_Package_Name
+				and type = p_Type
+			) where ORIGIN_CON_ID = MIN_ORIGIN_CON_ID -- important !!
             order by LINE
         ) loop 
             if cur.LINE = 1 then 
@@ -1853,7 +1856,9 @@ IS
 			select DISTINCT S.Type_Name, S.Item_Sequence, 
 				S.Package_Name, S.Package_Owner,
 				S.Item_Type, S.Table_Type, 
-				case when S.Table_Type = 'PL/SQL TABLE' then S.Index_By else 'PLS_INTEGER' end Index_By, 
+				case when S.Table_Type = 'PL/SQL TABLE' and S.Index_By IS NOT NULL 
+					then S.Index_By else 'PLS_INTEGER' 
+				end Index_By, 
 				T.Package_Name SUB_Package_Name, 
 				T.Package_Owner SUB_Package_Owner,
 				T.Type_Name SUB_Type_Name, 
@@ -1932,11 +1937,6 @@ IS
 					S.Item_Type, 
 					NVL(T.Table_Type, S.Data_Type) Data_Type,
 					S.Table_Type,
-					T.Package_Name SUB_Package_Name, 
-					T.Package_Owner SUB_Package_Owner,
-					T.Type_Name SUB_Type_Name, 
-					T.Table_Type SUB_Table_Type, 
-					T.Index_By,
                     case when T.Table_Type = 'RECORD' then
                     	'Log_' || T.Type_Name
                     end RECORD_CONVERSION
@@ -1953,8 +1953,7 @@ IS
 					p_Formatted_Name => 'p_rec.'||T.Item_Name,
 					p_Data_Type => T.Data_Type,
 					p_Record_Conversion => T.RECORD_CONVERSION
-				) Literal,
-				T.SUB_Package_Owner, T.SUB_Package_Name, T.SUB_Type_Name, T.SUB_Table_Type
+				) Literal
 			FROM TYPES_Q T
 			WHERE T.PACKAGE_NAME = p_Type_Name
 			AND T.PACKAGE_OWNER = p_Type_Owner
@@ -2006,7 +2005,8 @@ IS
         IS
             WITH TYPES_Q AS (
 				SELECT S.Package_Name, S.Package_Owner, S.Type_Name, 
-					S.Index_By, S.Table_Type,
+					S.Index_By, 
+					S.Table_Type,
 					COUNT(*) Sub_Item_Degree
 				FROM MV_PACKAGE_RECORD_TYPES S
 				LEFT OUTER JOIN MV_PACKAGE_RECORD_TYPES T 
@@ -2023,7 +2023,10 @@ IS
                         A.TYPE_NAME RETURN_TYPE_NAME,
                         A.TYPE_OWNER RETURN_TYPE_OWNER,
                         A.TYPE_SUBNAME RETURN_TYPE_SUBNAME,
-                        T.INDEX_BY RETURN_INDEX_BY,
+						case when T.TABLE_TYPE = 'PL/SQL TABLE' AND T.INDEX_BY IS NOT NULL 
+							then T.INDEX_BY 
+							else 'PLS_INTEGER' 
+						end RETURN_INDEX_BY,
                         A.CHAR_USED,
                         CASE WHEN A.TYPE_NAME IS NOT NULL THEN 
                             CASE WHEN A.DATA_TYPE = 'REF' THEN ' ref ' END
@@ -2035,7 +2038,8 @@ IS
                         ELSE 
                             A.PLS_TYPE 
                         END RETURN_TYPE,
-                        A.TYPE_OBJECT_TYPE
+                        A.TYPE_OBJECT_TYPE,
+                        A.ORIGIN_CON_ID
                 FROM SYS.ALL_ARGUMENTS A
                 LEFT OUTER JOIN SYS.All_Synonyms S 
                 	ON S.SYNONYM_NAME = A.TYPE_NAME
@@ -2049,7 +2053,7 @@ IS
                 AND POSITION = 0
                 AND ARGUMENT_NAME IS NULL
             ), ARGUMENTS_Q AS (
-                SELECT PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID,
+                SELECT PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID, ORIGIN_CON_ID,
                         COUNT(*) ARGS_COUNT,
                         SUM(CASE WHEN IN_OUT IN ('IN/OUT', 'OUT') THEN 1 ELSE 0 END) OUT_COUNT,
                         LISTAGG(ARG_PREFIX||ARGUMENT_NAME, ',') WITHIN GROUP (ORDER BY POSITION) ARGUMENT_NAMES,
@@ -2197,11 +2201,16 @@ IS
                         		end, ' '||NL(4)) WITHIN GROUP (ORDER BY POSITION) 
                         AS ARG_CONVERT_OUT
 				FROM (
-					SELECT A.PACKAGE_NAME, A.OWNER, A.PROCEDURE_NAME, A.SUBPROGRAM_ID, 
+					SELECT A.PACKAGE_NAME, A.OWNER, A.PROCEDURE_NAME, A.SUBPROGRAM_ID, A.ORIGIN_CON_ID,
 						A.ARGUMENT_NAME, A.DATA_TYPE, A.POSITION, A.TYPE_OWNER, A.TYPE_NAME, A.TYPE_SUBNAME, 
 						A.IN_OUT, A.ARGUMENT_TYPE, A.ARG_PREFIX, 
-						T.SUB_ITEM_DEGREE, T.INDEX_BY
+						T.SUB_ITEM_DEGREE, 
+						case when T.TABLE_TYPE = 'PL/SQL TABLE' AND T.INDEX_BY IS NOT NULL 
+							then T.INDEX_BY 
+							else 'PLS_INTEGER' 
+						end INDEX_BY
 					FROM (SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, 
+								ORIGIN_CON_ID, MIN(ORIGIN_CON_ID) OVER (PARTITION BY PACKAGE_NAME, OWNER) MIN_ORIGIN_CON_ID,
 								LOWER(ARGUMENT_NAME) ARGUMENT_NAME,
 								DATA_TYPE, POSITION, TYPE_OWNER, TYPE_NAME, TYPE_SUBNAME, IN_OUT, 
 								lower(TYPE_OWNER || '.' || TYPE_NAME || '.' || TYPE_SUBNAME) ARGUMENT_TYPE,
@@ -2220,6 +2229,7 @@ IS
 							ON A.TYPE_NAME = T.PACKAGE_NAME
 							AND A.TYPE_OWNER = T.PACKAGE_OWNER
 							AND A.TYPE_SUBNAME = T.TYPE_NAME
+					WHERE A.ORIGIN_CON_ID = A.MIN_ORIGIN_CON_ID
 				) A
                 GROUP BY PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID
             )
@@ -2256,16 +2266,19 @@ IS
                     AND PRO.OWNER = RET.OWNER
                     AND PRO.PROCEDURE_NAME = RET.PROCEDURE_NAME
                     AND PRO.SUBPROGRAM_ID = RET.SUBPROGRAM_ID
+                    AND PRO.ORIGIN_CON_ID = RET.ORIGIN_CON_ID
             LEFT OUTER JOIN RETURN_Q RD -- get return type of functions in destination schema.
                     ON RD.PACKAGE_NAME = p_Package_Name
                     AND RD.OWNER = p_Package_Owner
                     AND PRO.PROCEDURE_NAME = RD.PROCEDURE_NAME
                     AND PRO.SUBPROGRAM_ID = RD.SUBPROGRAM_ID
+                    AND PRO.ORIGIN_CON_ID = RD.ORIGIN_CON_ID
             LEFT OUTER JOIN ARGUMENTS_Q ARG 
                     ON PRO.OBJECT_NAME = ARG.PACKAGE_NAME
                     AND PRO.OWNER = ARG.OWNER
                     AND PRO.PROCEDURE_NAME = ARG.PROCEDURE_NAME
                     AND PRO.SUBPROGRAM_ID = ARG.SUBPROGRAM_ID
+                    AND PRO.ORIGIN_CON_ID = ARG.ORIGIN_CON_ID
             WHERE PRO.OBJECT_NAME = p_Object_Name
             AND PRO.OWNER = p_Object_Owner
             AND PRO.OBJECT_TYPE = 'PACKAGE'

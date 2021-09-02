@@ -27,7 +27,7 @@ prompt APPLICATION 103 - APEX API Tracer
 -- Application Export:
 --   Application:     103
 --   Name:            APEX API Tracer
---   Date and Time:   16:00 Thursday September 2, 2021
+--   Date and Time:   23:03 Thursday September 2, 2021
 --   Exported By:     DIRK
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -105,7 +105,7 @@ wwv_flow_api.create_flow(
 ,p_public_user=>'APEX_PUBLIC_USER'
 ,p_proxy_server=>nvl(wwv_flow_application_install.get_proxy,'')
 ,p_no_proxy_domains=>nvl(wwv_flow_application_install.get_no_proxy_domains,'')
-,p_flow_version=>'Release 1.3.2'
+,p_flow_version=>'Release 1.3.3'
 ,p_flow_status=>'AVAILABLE_W_EDIT_LINK'
 ,p_flow_unavailable_text=>'This application is currently unavailable at this time.'
 ,p_exact_substitutions_only=>'Y'
@@ -118,7 +118,7 @@ wwv_flow_api.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'APEX API Tracer'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210902155301'
+,p_last_upd_yyyymmddhh24miss=>'20210902230340'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>9
 ,p_ui_type_name => null
@@ -15676,11 +15676,14 @@ wwv_flow_api.append_to_install_script(
 '        || chr(10);',
 '        dbms_lob.writeappend (v_Clob, length(v_SQLText), v_SQLText);',
 '        for cur in (',
-'            SELECT TEXT, LINE',
-'            FROM SYS.All_Source ',
-'            where Owner = p_Package_Owner',
-'            and Name = p_Package_Name',
-'            and type = p_Type',
+'        	select TEXT, LINE ',
+'        	from (',
+'				SELECT TEXT, LINE, ORIGIN_CON_ID, MIN(ORIGIN_CON_ID) OVER (PARTITION BY Owner, Name, type) MIN_ORIGIN_CON_ID',
+'				FROM SYS.All_Source ',
+'				where Owner = p_Package_Owner',
+'				and Name = p_Package_Name',
+'				and type = p_Type',
+'			) where ORIGIN_CON_ID = MIN_ORIGIN_CON_ID -- important !!',
 '            order by LINE',
 '        ) loop ',
 '            if cur.LINE = 1 then ',
@@ -16121,7 +16124,9 @@ wwv_flow_api.append_to_install_script(
 '			select DISTINCT S.Type_Name, S.Item_Sequence, ',
 '				S.Package_Name, S.Package_Owner,',
 '				S.Item_Type, S.Table_Type, ',
-'				case when S.Table_Type = ''PL/SQL TABLE'' then S.Index_By else ''PLS_INTEGER'' end Index_By, ',
+'				case when S.Table_Type = ''PL/SQL TABLE'' and S.Index_By IS NOT NULL ',
+'					then S.Index_By else ''PLS_INTEGER'' ',
+'				end Index_By, ',
 '				T.Package_Name SUB_Package_Name, ',
 '				T.Package_Owner SUB_Package_Owner,',
 '				T.Type_Name SUB_Type_Name, ',
@@ -16200,11 +16205,6 @@ wwv_flow_api.append_to_install_script(
 '					S.Item_Type, ',
 '					NVL(T.Table_Type, S.Data_Type) Data_Type,',
 '					S.Table_Type,',
-'					T.Package_Name SUB_Package_Name, ',
-'					T.Package_Owner SUB_Package_Owner,',
-'					T.Type_Name SUB_Type_Name, ',
-'					T.Table_Type SUB_Table_Type, ',
-'					T.Index_By,',
 '                    case when T.Table_Type = ''RECORD'' then',
 '                    	''Log_'' || T.Type_Name',
 '                    end RECORD_CONVERSION',
@@ -16221,8 +16221,7 @@ wwv_flow_api.append_to_install_script(
 '					p_Formatted_Name => ''p_rec.''||T.Item_Name,',
 '					p_Data_Type => T.Data_Type,',
 '					p_Record_Conversion => T.RECORD_CONVERSION',
-'				) Literal,',
-'				T.SUB_Package_Owner, T.SUB_Package_Name, T.SUB_Type_Name, T.SUB_Table_Type',
+'				) Literal',
 '			FROM TYPES_Q T',
 '			WHERE T.PACKAGE_NAME = p_Type_Name',
 '			AND T.PACKAGE_OWNER = p_Type_Owner',
@@ -16274,7 +16273,8 @@ wwv_flow_api.append_to_install_script(
 '        IS',
 '            WITH TYPES_Q AS (',
 '				SELECT S.Package_Name, S.Package_Owner, S.Type_Name, ',
-'					S.Index_By, S.Table_Type,',
+'					S.Index_By, ',
+'					S.Table_Type,',
 '					COUNT(*) Sub_Item_Degree',
 '				FROM MV_PACKAGE_RECORD_TYPES S',
 '				LEFT OUTER JOIN MV_PACKAGE_RECORD_TYPES T ',
@@ -16291,11 +16291,14 @@ wwv_flow_api.append_to_install_script(
 '                        A.TYPE_NAME RETURN_TYPE_NAME,',
 '                        A.TYPE_OWNER RETURN_TYPE_OWNER,',
 '                        A.TYPE_SUBNAME RETURN_TYPE_SUBNAME,',
-'                        T.INDEX_BY RETURN_INDEX_BY,',
+'						case when T.TABLE_TYPE = ''PL/SQL TABLE'' AND T.INDEX_BY IS NOT NULL ',
+'							then T.INDEX_BY ',
+'							else ''PLS_INTEGER'' ',
+'						end RETURN_INDEX_BY,',
 '                        A.CHAR_USED,',
 '                        CASE WHEN A.TYPE_NAME IS NOT NULL THEN ',
 '                            CASE WHEN A.DATA_TYPE = ''REF'' THEN '' ref '' END',
-'                            || CASE WHEN (S.SYNONYM_NAME IS NULL OR A.TYPE_OBJECT_TYPE = ''PACKAGE'')'))
+'                            || CASE WHEN (S'))
 );
 null;
 end;
@@ -16304,7 +16307,7 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'',
+'.SYNONYM_NAME IS NULL OR A.TYPE_OBJECT_TYPE = ''PACKAGE'')',
 '                            	AND TYPE_OWNER NOT IN (p_Package_Owner, ''PUBLIC'') THEN TYPE_OWNER||''.'' END ',
 '                            || A.TYPE_NAME ',
 '                            || CASE WHEN A.TYPE_SUBNAME IS NOT NULL THEN ''.''||A.TYPE_SUBNAME END ',
@@ -16312,7 +16315,8 @@ wwv_flow_api.append_to_install_script(
 '                        ELSE ',
 '                            A.PLS_TYPE ',
 '                        END RETURN_TYPE,',
-'                        A.TYPE_OBJECT_TYPE',
+'                        A.TYPE_OBJECT_TYPE,',
+'                        A.ORIGIN_CON_ID',
 '                FROM SYS.ALL_ARGUMENTS A',
 '                LEFT OUTER JOIN SYS.All_Synonyms S ',
 '                	ON S.SYNONYM_NAME = A.TYPE_NAME',
@@ -16326,7 +16330,7 @@ wwv_flow_api.append_to_install_script(
 '                AND POSITION = 0',
 '                AND ARGUMENT_NAME IS NULL',
 '            ), ARGUMENTS_Q AS (',
-'                SELECT PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID,',
+'                SELECT PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID, ORIGIN_CON_ID,',
 '                        COUNT(*) ARGS_COUNT,',
 '                        SUM(CASE WHEN IN_OUT IN (''IN/OUT'', ''OUT'') THEN 1 ELSE 0 END) OUT_COUNT,',
 '                        LISTAGG(ARG_PREFIX||ARGUMENT_NAME, '','') WITHIN GROUP (ORDER BY POSITION) ARGUMENT_NAMES,',
@@ -16474,11 +16478,16 @@ wwv_flow_api.append_to_install_script(
 '                        		end, '' ''||NL(4)) WITHIN GROUP (ORDER BY POSITION) ',
 '                        AS ARG_CONVERT_OUT',
 '				FROM (',
-'					SELECT A.PACKAGE_NAME, A.OWNER, A.PROCEDURE_NAME, A.SUBPROGRAM_ID, ',
+'					SELECT A.PACKAGE_NAME, A.OWNER, A.PROCEDURE_NAME, A.SUBPROGRAM_ID, A.ORIGIN_CON_ID,',
 '						A.ARGUMENT_NAME, A.DATA_TYPE, A.POSITION, A.TYPE_OWNER, A.TYPE_NAME, A.TYPE_SUBNAME, ',
 '						A.IN_OUT, A.ARGUMENT_TYPE, A.ARG_PREFIX, ',
-'						T.SUB_ITEM_DEGREE, T.INDEX_BY',
+'						T.SUB_ITEM_DEGREE, ',
+'						case when T.TABLE_TYPE = ''PL/SQL TABLE'' AND T.INDEX_BY IS NOT NULL ',
+'							then T.INDEX_BY ',
+'							else ''PLS_INTEGER'' ',
+'						end INDEX_BY',
 '					FROM (SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, ',
+'								ORIGIN_CON_ID, MIN(ORIGIN_CON_ID) OVER (PARTITION BY PACKAGE_NAME, OWNER) MIN_ORIGIN_CON_ID,',
 '								LOWER(ARGUMENT_NAME) ARGUMENT_NAME,',
 '								DATA_TYPE, POSITION, TYPE_OWNER, TYPE_NAME, TYPE_SUBNAME, IN_OUT, ',
 '								lower(TYPE_OWNER || ''.'' || TYPE_NAME || ''.'' || TYPE_SUBNAME) ARGUMENT_TYPE,',
@@ -16497,6 +16506,7 @@ wwv_flow_api.append_to_install_script(
 '							ON A.TYPE_NAME = T.PACKAGE_NAME',
 '							AND A.TYPE_OWNER = T.PACKAGE_OWNER',
 '							AND A.TYPE_SUBNAME = T.TYPE_NAME',
+'					WHERE A.ORIGIN_CON_ID = A.MIN_ORIGIN_CON_ID',
 '				) A',
 '                GROUP BY PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID',
 '            )',
@@ -16533,16 +16543,19 @@ wwv_flow_api.append_to_install_script(
 '                    AND PRO.OWNER = RET.OWNER',
 '                    AND PRO.PROCEDURE_NAME = RET.PROCEDURE_NAME',
 '                    AND PRO.SUBPROGRAM_ID = RET.SUBPROGRAM_ID',
+'                    AND PRO.ORIGIN_CON_ID = RET.ORIGIN_CON_ID',
 '            LEFT OUTER JOIN RETURN_Q RD -- get return type of functions in destination schema.',
 '                    ON RD.PACKAGE_NAME = p_Package_Name',
 '                    AND RD.OWNER = p_Package_Owner',
 '                    AND PRO.PROCEDURE_NAME = RD.PROCEDURE_NAME',
 '                    AND PRO.SUBPROGRAM_ID = RD.SUBPROGRAM_ID',
+'                    AND PRO.ORIGIN_CON_ID = RD.ORIGIN_CON_ID',
 '            LEFT OUTER JOIN ARGUMENTS_Q ARG ',
 '                    ON PRO.OBJECT_NAME = ARG.PACKAGE_NAME',
 '                    AND PRO.OWNER = ARG.OWNER',
 '                    AND PRO.PROCEDURE_NAME = ARG.PROCEDURE_NAME',
 '                    AND PRO.SUBPROGRAM_ID = ARG.SUBPROGRAM_ID',
+'                    AND PRO.ORIGIN_CON_ID = ARG.ORIGIN_CON_ID',
 '            WHERE PRO.OBJECT_NAME = p_Object_Name',
 '            AND PRO.OWNER = p_Object_Owner',
 '            AND PRO.OBJECT_TYPE = ''PACKAGE''',
@@ -16897,7 +16910,16 @@ wwv_flow_api.append_to_install_script(
 '                        	p_Package_Owner => p_Object_Owner,',
 '							p_Type_Name => v_proc_tbl(ind).RETURN_TYPE_NAME,',
 '							p_Type_Owner => v_proc_tbl(ind).RETURN_TYPE_OWNER,',
-'							p_Type_Subname => v_proc_tbl(ind).RETURN_TYPE_SUBNAME,',
+'							p_Type_Subname => v_proc_tbl(in'))
+);
+null;
+end;
+/
+begin
+wwv_flow_api.append_to_install_script(
+ p_id=>wwv_flow_api.id(263953810352951150)
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'d).RETURN_TYPE_SUBNAME,',
 '							p_Variable_Name => ''lv_temp'',',
 '							p_In_Out => ''OUT''',
 '						)',
@@ -16910,16 +16932,7 @@ wwv_flow_api.append_to_install_script(
 '                    then',
 '                        v_sqltext := v_sqltext || chr(10) ',
 '						|| ''is'' ',
-'						|| NL(4) || p_Variable_Name||'))
-);
-null;
-end;
-/
-begin
-wwv_flow_api.append_to_install_script(
- p_id=>wwv_flow_api.id(263953810352951150)
-,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-''' '' || v_proc_tbl(ind).RETURN_TYPE || '';'' ',
+'						|| NL(4) || p_Variable_Name||'' '' || v_proc_tbl(ind).RETURN_TYPE || '';'' ',
 '						|| v_proc_tbl(ind).ARG_DECLARE_IN',
 '						|| chr(10) ',
 '                        || ''begin'' || chr(10) ',
