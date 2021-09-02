@@ -27,7 +27,7 @@ prompt APPLICATION 103 - APEX API Tracer
 -- Application Export:
 --   Application:     103
 --   Name:            APEX API Tracer
---   Date and Time:   19:57 Tuesday August 31, 2021
+--   Date and Time:   16:00 Thursday September 2, 2021
 --   Exported By:     DIRK
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -105,7 +105,7 @@ wwv_flow_api.create_flow(
 ,p_public_user=>'APEX_PUBLIC_USER'
 ,p_proxy_server=>nvl(wwv_flow_application_install.get_proxy,'')
 ,p_no_proxy_domains=>nvl(wwv_flow_application_install.get_no_proxy_domains,'')
-,p_flow_version=>'Release 1.3.1'
+,p_flow_version=>'Release 1.3.2'
 ,p_flow_status=>'AVAILABLE_W_EDIT_LINK'
 ,p_flow_unavailable_text=>'This application is currently unavailable at this time.'
 ,p_exact_substitutions_only=>'Y'
@@ -118,7 +118,7 @@ wwv_flow_api.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'APEX API Tracer'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20210831194751'
+,p_last_upd_yyyymmddhh24miss=>'20210902155301'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>9
 ,p_ui_type_name => null
@@ -13256,15 +13256,23 @@ wwv_flow_api.create_install_script(
 ,p_script_type=>'INSTALL'
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
 '/*',
-'Copyright 2019 Dirk Strack, Strack Software Development',
+'Copyright 2021 Dirk Strack, Strack Software Development',
 '',
-'All Rights Reserved',
-'Unauthorized copying of this file, via any medium is strictly prohibited',
-'Proprietary and confidential',
-'Written by Dirk Strack <dirk_strack@yahoo.de>, Feb 2019',
+'Licensed under the Apache License, Version 2.0 (the "License");',
+'you may not use this file except in compliance with the License.',
+'You may obtain a copy of the License at',
+'',
+'    http://www.apache.org/licenses/LICENSE-2.0',
+'',
+'Unless required by applicable law or agreed to in writing, software',
+'distributed under the License is distributed on an "AS IS" BASIS,',
+'WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.',
+'See the License for the specific language governing permissions and',
+'limitations under the License.',
 '*/',
+'------------------------------------------------------------------------------------------',
 '/*',
-'api_trace enables tracing of calls to prepared packages ',
+'api_trace enables tracing of call with arguments to prepared packages ',
 '*/',
 '',
 'CREATE OR REPLACE PACKAGE api_trace',
@@ -13272,14 +13280,22 @@ wwv_flow_api.create_install_script(
 'IS',
 '    c_APEX_Logging_Start_Call  CONSTANT VARCHAR2(1000) := ''apex_debug.log_long_message(p_message=>''''API call: '''' || %s, p_level=>5);'';',
 '    c_APEX_Logging_Exit_Call CONSTANT VARCHAR2(1000) := ''apex_debug.log_long_message(p_message=>''''API exit: '''' || %s, p_level=>5);'';',
-'    c_APEX_Logging_API_Call    CONSTANT VARCHAR2(1000) := ''apex_debug.log_long_message(p_message=>''''API: '''' || %s, p_level=>5);'';',
+'    c_APEX_Logging_API_Call CONSTANT VARCHAR2(1000) := ''apex_debug.log_long_message(p_message=>''''API: '''' || %s, p_level=>5);'';',
 '    c_APEX_Logging_API_Exception CONSTANT VARCHAR2(1000) := ''apex_debug.log_long_message(p_message=>''''API Exception: '''' || %s, p_level=>5);'';',
+'	c_DBMS_OUTPUT_API_Call 	CONSTANT VARCHAR2(1000) := ''DBMS_OUTPUT.PUT_LINE(''''API: '''' || %s);'';',
 '    -- p_level=>4; -- default level if debugging is enabled (for example, used by apex_application.debug)',
 '    -- p_level=>5; -- application: messages when procedures/functions are entered',
 '    -- p_level=>6; -- application: other messages within procedures/functions',
-'    c_format_max_length CONSTANT NUMBER := 32700;',
-'    c_value_max_length  CONSTANT NUMBER := 1000;',
-'	c_Package_Name             CONSTANT VARCHAR2(128) := lower($$plsql_unit);',
+'    c_format_max_length 	CONSTANT NUMBER := 32700;',
+'    c_value_max_length  	CONSTANT NUMBER := 1000;',
+'	c_Package_Name          CONSTANT VARCHAR2(128) := lower($$plsql_unit);',
+'	',
+'	g_Logging_Start_Call	VARCHAR2(32767) := c_APEX_Logging_Start_Call;',
+'	g_Logging_Exit_Call 	VARCHAR2(32767) := c_APEX_Logging_Exit_Call;',
+'	g_Logging_API_Call    	VARCHAR2(32767) := c_APEX_Logging_API_Call;',
+'	g_Logging_API_Exception VARCHAR2(32767) := c_APEX_Logging_API_Exception;',
+'	PROCEDURE Init_APEX_Logging;',
+'	PROCEDURE Init_DBMS_OUTPUT;',
 '    FUNCTION Literal ( p_Text VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )',
 '    RETURN VARCHAR2 DETERMINISTIC;',
 '    FUNCTION Literal ( p_Value BLOB, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )',
@@ -13313,31 +13329,31 @@ wwv_flow_api.create_install_script(
 '',
 '	-- log function or procedure call with all arguments',
 '    FUNCTION Dyn_Log_Call(',
-'        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,	-- string with a %s placeholder for the call arguments.',
+'        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Call,	-- string with a %s placeholder for the call arguments.',
 '        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message',
 '        p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.',
 '    ) RETURN VARCHAR2; ',
 '	-- log function call with all arguments and return value',
 '    FUNCTION Dyn_Log_Function_Call(',
-'        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call, -- string with a %s placeholder for the call arguments.',
+'        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Call, -- string with a %s placeholder for the call arguments.',
 '        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message',
 '        p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.',
 '    ) RETURN VARCHAR2;',
 '	-- log function or procedure call with all IN or IN/OUT arguments',
 '    FUNCTION Dyn_Log_Start (',
-'        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,-- string with a %s placeholder for the call arguments.',
+'        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_Start_Call,-- string with a %s placeholder for the call arguments.',
 '        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message',
 '        p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.',
 '    ) RETURN VARCHAR2;',
 '	-- log function or procedure call with all OUT or IN/OUT arguments',
 '    FUNCTION Dyn_Log_Exit (',
-'        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.',
+'        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.',
 '        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message',
 '        p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.',
 '    ) RETURN VARCHAR2;',
 '	-- log function exception with all arguments and error stack',
 '    FUNCTION Dyn_Log_Exception (',
-'        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- string with a %s placeholder for the call arguments.',
+'        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Exception,-- string with a %s placeholder for the call arguments.',
 '        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message',
 '        p_overload IN INTEGER DEFAULT 0,                             -- identifier of a overloded funtion in order of occurence.',
 '        p_format_error_function IN VARCHAR2 DEFAULT ''DBMS_UTILITY.FORMAT_ERROR_STACK'' -- function for formating for the current error. The output is concatinated to the message.',
@@ -13350,6 +13366,22 @@ wwv_flow_api.create_install_script(
 'IS',
 '    c_Quote CONSTANT VARCHAR2(1) := chr(39);	-- Quote Character',
 '',
+'	PROCEDURE Init_APEX_Logging IS',
+'    BEGIN',
+'		g_Logging_Start_Call	:= c_APEX_Logging_Start_Call;',
+'		g_Logging_Exit_Call 	:= c_APEX_Logging_Exit_Call;',
+'		g_Logging_API_Call    	:= c_APEX_Logging_API_Call;',
+'		g_Logging_API_Exception := c_APEX_Logging_API_Exception;',
+'	END Init_APEX_Logging;',
+'',
+'	PROCEDURE Init_DBMS_OUTPUT IS',
+'    BEGIN',
+'		g_Logging_Start_Call	:= c_DBMS_OUTPUT_API_Call;',
+'		g_Logging_Exit_Call 	:= c_DBMS_OUTPUT_API_Call;',
+'		g_Logging_API_Call    	:= c_DBMS_OUTPUT_API_Call;',
+'		g_Logging_API_Exception := c_DBMS_OUTPUT_API_Call;',
+'	END Init_DBMS_OUTPUT;',
+'	',
 '    FUNCTION Literal ( p_Text VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )',
 '    RETURN VARCHAR2 DETERMINISTIC',
 '    IS',
@@ -13583,7 +13615,7 @@ wwv_flow_api.create_install_script(
 '    ',
 '	-- log function or procedure call with all arguments',
 '    FUNCTION Dyn_Log_Call(',
-'        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,   	 -- string with a %s placeholder for the call arguments.',
+'        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Call,   	 -- string with a %s placeholder for the call arguments.',
 '        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                      -- maximum length of an single procedure argument value in the log message',
 '        p_overload IN INTEGER DEFAULT 0                                  -- identifier of a overloded funtion in order of occurence.',
 '    ) RETURN VARCHAR2',
@@ -13607,7 +13639,7 @@ wwv_flow_api.create_install_script(
 '',
 '	-- log function call with all arguments and return value',
 '    FUNCTION Dyn_Log_Function_Call(',
-'        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,   	 -- string with a %s placeholder for the call arguments.',
+'        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Call,   	 -- string with a %s placeholder for the call arguments.',
 '        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                      -- maximum length of an single procedure argument value in the log message',
 '        p_overload IN INTEGER DEFAULT 0                                  -- identifier of a overloded funtion in order of occurence.',
 '    ) RETURN VARCHAR2',
@@ -13632,7 +13664,7 @@ wwv_flow_api.create_install_script(
 '',
 '	-- log function or procedure call with all IN or IN/OUT arguments',
 '    FUNCTION Dyn_Log_Start (',
-'        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,-- string with a %s placeholder for the call arguments.',
+'        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_Start_Call,-- string with a %s placeholder for the call arguments.',
 '        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message',
 '        p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.',
 '    ) RETURN VARCHAR2',
@@ -13656,7 +13688,7 @@ wwv_flow_api.create_install_script(
 '',
 '	-- log function or procedure call with all OUT or IN/OUT arguments',
 '    FUNCTION Dyn_Log_Exit (',
-'        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.',
+'        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.',
 '        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message',
 '        p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.',
 '    ) RETURN VARCHAR2',
@@ -13680,7 +13712,7 @@ wwv_flow_api.create_install_script(
 '    ',
 '	-- log function exception with all arguments and error stack',
 '    FUNCTION Dyn_Log_Exception (',
-'        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- string with a %s placeholder for the call arguments.',
+'        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Exception,-- string with a %s placeholder for the call arguments.',
 '        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message',
 '        p_overload IN INTEGER DEFAULT 0,                             -- identifier of a overloded funtion in order of occurence.',
 '        p_format_error_function IN VARCHAR2 DEFAULT ''DBMS_UTILITY.FORMAT_ERROR_STACK'' -- function for formating for the current error. The output is concatinated to the message.',
@@ -13718,6 +13750,22 @@ wwv_flow_api.create_install_script(
 ,p_sequence=>20
 ,p_script_type=>'INSTALL'
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/*',
+'Copyright 2021 Dirk Strack, Strack Software Development',
+'',
+'Licensed under the Apache License, Version 2.0 (the "License");',
+'you may not use this file except in compliance with the License.',
+'You may obtain a copy of the License at',
+'',
+'    http://www.apache.org/licenses/LICENSE-2.0',
+'',
+'Unless required by applicable law or agreed to in writing, software',
+'distributed under the License is distributed on an "AS IS" BASIS,',
+'WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.',
+'See the License for the specific language governing permissions and',
+'limitations under the License.',
+'*/',
+'------------------------------------------------------------------------------------------',
 '/*',
 'Package_Tracer enables the tracing of calls to package procedures or functions without manual programming.',
 'This program can generate a package for tracing automatically when the following conditions apply:',
@@ -14201,6 +14249,21 @@ wwv_flow_api.create_install_script(
 ,p_sequence=>30
 ,p_script_type=>'INSTALL'
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/*',
+'Copyright 2021 Dirk Strack, Strack Software Development',
+'',
+'Licensed under the Apache License, Version 2.0 (the "License");',
+'you may not use this file except in compliance with the License.',
+'You may obtain a copy of the License at',
+'',
+'    http://www.apache.org/licenses/LICENSE-2.0',
+'',
+'Unless required by applicable law or agreed to in writing, software',
+'distributed under the License is distributed on an "AS IS" BASIS,',
+'WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.',
+'See the License for the specific language governing permissions and',
+'limitations under the License.',
+'*/',
 '------------------------------------------------------------------------------------------',
 'CREATE OR REPLACE PACKAGE BODY package_tracer',
 'IS',
@@ -14303,7 +14366,7 @@ wwv_flow_api.create_install_script(
 '			and NOT EXISTS (',
 '            	select * from SYS.ALL_ARGUMENTS A',
 '				where (A.DATA_TYPE IN (''UNDEFINED'')',
-'					OR A.DATA_TYPE = ''OPAQUE/XMLTYPE'' AND A.TYPE_SUBNAME LIKE''<%>'') ',
+'					OR A.TYPE_SUBNAME LIKE''<%>'') ',
 '				and A.PACKAGE_NAME = SYN.TABLE_NAME',
 '				and A.OWNER = SYN.TABLE_OWNER',
 '            )',
@@ -14326,8 +14389,10 @@ wwv_flow_api.create_install_script(
 '            )',
 '            and not (SYN.TABLE_OWNER = ''SYS'' -- package defines nested record types for function arguments',
 '            	and SYN.TABLE_NAME IN (',
-'                	''OWA_COOKIE'',''OWA_TEXT'',',
-'                	''DBMS_METADATA'',''DBMS_JAVA'',''DBMS_STAT_FUNCS'',''DBMS_DEBUG'',''DBMS_TF'',''DBMS_UTILITY'')',
+'					''DBMS_DEBUG'',		-- PLS-00307: Zu viele Deklarationen von ''GET_ENCODED_STACK_FOR_CLIENT'' entsprechen diesem Aufruf',
+'					''DBMS_TF'',			-- because argument name <V2_TABLE_1> must be declared',
+'					''DBMS_UTILITY''		-- because of conditional compilation condition in function header',
+'            	)',
 '            )',
 '            and SYN.SYNONYM_NAME NOT IN (',
 '            	''API_TRACE'',				-- because package_tracer is dependent on this object ',
@@ -14336,7 +14401,6 @@ wwv_flow_api.create_install_script(
 '            	''APEX_DEBUG'', 				-- because package_tracer is dependent on this synonyms',
 '            	''APEX_APPLICATION'',			-- because global variables are defined',
 '            	''APEX_PLUGIN'',				-- because the second synonym WWV_FLOW_PLUGIN_API is used in other packages',
-'                ''CTX_DOC'',					-- package defines nested record types for function arguments',
 '                ''DBMS_DIMENSION'', 			-- PLS-00307: Zu viele Deklarationen von ''VALIDATE_DIMENSION'' entsprechen diesem Aufruf',
 '                ''DBMS_SODA_USER_ADMIN'', 	-- PLS-00201',
 unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LINK_GENERATE_PATH'' verst\00F6\00DFt gegen sein zugeordnetes Pragma'),
@@ -14791,7 +14855,15 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '                    FROM SYS.USER_TABLES T',
 '                    LEFT OUTER JOIN PKEY_Q P ON T.TABLE_NAME = P.TABLE_NAME',
 '                    LEFT OUTER JOIN COLS_Q C ON T.TABLE_NAME = C.TABLE_NAME',
-'                    WHERE T.IOT_NAME IS NULL    -- skip overflow tables of index organized tables',
+'                    WHERE '))
+);
+end;
+/
+begin
+wwv_flow_api.append_to_install_script(
+ p_id=>wwv_flow_api.id(263953810352951150)
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'T.IOT_NAME IS NULL    -- skip overflow tables of index organized tables',
 '                    AND T.TABLE_NAME NOT LIKE ''DR$%$_''  -- skip fulltext index',
 '                ) T, PA',
 '                WHERE PA.GRANTEE IS NOT NULL',
@@ -14803,15 +14875,7 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '                    AND MV.LOG_OWNER = PA.OWNER',
 '                )',
 '                UNION ALL  ',
-'                -- Function, Procedure,'))
-);
-end;
-/
-begin
-wwv_flow_api.append_to_install_script(
- p_id=>wwv_flow_api.id(263953810352951150)
-,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-' Package, Type',
+'                -- Function, Procedure, Package, Type',
 '                -------------------------------',
 '                SELECT ''GRANT EXECUTE ON '' || PA.OWNER || ''.'' || T.OBJECT_NAME || '' TO '' || PA.GRANTEE GRANT_STAT,',
 '                    ''CREATE OR REPLACE SYNONYM ''  || PA.GRANTEE || ''.'' || OBJECT_NAME ',
@@ -15485,7 +15549,16 @@ wwv_flow_api.append_to_install_script(
 '						p_Return_Type => RET.RETURN_TYPE',
 '					), p_Indent',
 '                ) AS PRO_END,',
-'                NL(p_Indent) ',
+'  '))
+);
+null;
+end;
+/
+begin
+wwv_flow_api.append_to_install_script(
+ p_id=>wwv_flow_api.id(263953810352951150)
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'              NL(p_Indent) ',
 '                || ''exception '' ',
 '                || case when PIPELINED = ''YES'' then ',
 '                	NL(p_Indent + 2)',
@@ -15496,16 +15569,7 @@ wwv_flow_api.append_to_install_script(
 '                AS PRO_EXCEPTION,',
 '				PRO.OWNER || ''.'' || PRO.OBJECT_NAME || ''.'' || PRO.PROCEDURE_NAME CALLING_SUBPROG,',
 '				INITCAP(PRO.OBJECT_NAME) || ''.'' || INITCAP(PRO.PROCEDURE_NAME) PACKAGE_PROCEDURE_NAME,',
-'                ARG.PARAM_LIST, ARG.PARAM_LIST_IN, ARG.PARAM_LIST_OUT, ARG.OUT_COUNT'))
-);
-null;
-end;
-/
-begin
-wwv_flow_api.append_to_install_script(
- p_id=>wwv_flow_api.id(263953810352951150)
-,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-', ',
+'                ARG.PARAM_LIST, ARG.PARAM_LIST_IN, ARG.PARAM_LIST_OUT, ARG.OUT_COUNT, ',
 '                RET.RETURN_PLS_TYPE, RET.RETURN_DATA_TYPE, ',
 '                RET.RETURN_TYPE,',
 '                Replace_Substitution(',
@@ -15974,7 +16038,7 @@ wwv_flow_api.append_to_install_script(
 '		for cur in (',
 '			-- get the details of S.Item_type in T.*',
 '			select DISTINCT S.Item_Name, S.Item_Sequence, ',
-'				S.Item_Type, S.Table_Type, S.Nested_Table,',
+'				S.Item_Type, S.Table_Type, ',
 '				T.TABLE_TYPE SUB_Table_Type,',
 '				T.Package_Owner, T.Package_Name, T.Type_Name SUB_Type_Name',
 '			from MV_PACKAGE_RECORD_TYPES S ',
@@ -16012,7 +16076,7 @@ wwv_flow_api.append_to_install_script(
 '					p_Owner => p_Owner,',
 '					p_In_Out => p_In_Out',
 '				) || '')'';',
-'			elsif cur.SUB_Table_Type = ''PL/SQL TABLE''',
+'			elsif cur.SUB_Table_Type IN (''PL/SQL TABLE'', ''TABLE'', ''VARRAY'')',
 '			and cur.Package_Name = p_Package_Name -- only local types need conversion',
 '			then ',
 '				v_function_name := case when p_In_Out IN (''IN'', ''IN/OUT'') ',
@@ -16056,7 +16120,8 @@ wwv_flow_api.append_to_install_script(
 '			-- get the details of S.Item_type in T.*',
 '			select DISTINCT S.Type_Name, S.Item_Sequence, ',
 '				S.Package_Name, S.Package_Owner,',
-'				S.Item_Type, S.Table_Type, S.Index_By, S.Nested_Table,',
+'				S.Item_Type, S.Table_Type, ',
+'				case when S.Table_Type = ''PL/SQL TABLE'' then S.Index_By else ''PLS_INTEGER'' end Index_By, ',
 '				T.Package_Name SUB_Package_Name, ',
 '				T.Package_Owner SUB_Package_Owner,',
 '				T.Type_Name SUB_Type_Name, ',
@@ -16069,7 +16134,7 @@ wwv_flow_api.append_to_install_script(
 '			where S.Package_Name = p_Type_Name',
 '			and S.Package_Owner = p_Type_Owner',
 '			and S.Type_Name = p_Type_Subname',
-'			and S.Table_Type = ''PL/SQL TABLE''',
+'			and S.Table_Type IN (''PL/SQL TABLE'', ''TABLE'', ''VARRAY'')',
 '			order by S.Item_Sequence',
 '		) loop',
 '			if (cur.Package_Owner = p_Package_Owner -- types of same schema and package can be converted with a function',
@@ -16209,8 +16274,7 @@ wwv_flow_api.append_to_install_script(
 '        IS',
 '            WITH TYPES_Q AS (',
 '				SELECT S.Package_Name, S.Package_Owner, S.Type_Name, ',
-'					S.Item_Type, S.Index_By, S.Nested_Table, S.Table_Type,',
-'					case when COUNT(*) > 1 then S.Item_Type end Record_Type,',
+'					S.Index_By, S.Table_Type,',
 '					COUNT(*) Sub_Item_Degree',
 '				FROM MV_PACKAGE_RECORD_TYPES S',
 '				LEFT OUTER JOIN MV_PACKAGE_RECORD_TYPES T ',
@@ -16219,28 +16283,19 @@ wwv_flow_api.append_to_install_script(
 '					or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name and S.Package_Owner = T.Package_Owner)',
 '				WHERE (S.Table_Type != ''RECORD'' or S.Nested_Table = ''Y'' ) --  Important',
 '				GROUP BY S.Package_Name, S.Package_Owner, S.Type_Name, ',
-'					S.Item_Type, S.Index_By, S.Nested_Table, S.Table_Type',
+'					S.Index_By, S.Table_Type',
 '            ), RETURN_Q AS (',
 '                SELECT A.PACKAGE_NAME, A.OWNER, A.OBJECT_NAME PROCEDURE_NAME, A.SUBPROGRAM_ID, ',
 '                        A.IN_OUT, ',
-'                        A.PLS_TYPE RETURN_PLS_TYPE, ',
 '                        A.DATA_TYPE RETURN_DATA_TYPE,',
 '                        A.TYPE_NAME RETURN_TYPE_NAME,',
 '                        A.TYPE_OWNER RETURN_TYPE_OWNER,',
 '                        A.TYPE_SUBNAME RETURN_TYPE_SUBNAME,',
-'                        NVL(T.INDEX_BY, ''PLS_INTEGER'') RETURN_IDX_TYPE,',
-'                        T.RECORD_TYPE RETURN_RECORD_TYPE,',
-'                        T.NESTED_TABLE RETURN_NESTED_TABLE,',
+'                        T.INDEX_BY RETURN_INDEX_BY,',
 '                        A.CHAR_USED,',
 '                        CASE WHEN A.TYPE_NAME IS NOT NULL THEN ',
 '                            CASE WHEN A.DATA_TYPE = ''REF'' THEN '' ref '' END',
-'                            || CASE WHEN (S.SYNONYM_NAME IS NULL OR A.TYPE_OBJECT_TYPE = ''PACKAGE'')',
-'                            	AND TYPE_OWNER NOT IN (p_Package_Owner, ''PUBLIC'') THEN TYPE_OWNER||''.'' END ',
-'                            || A.TYPE_NAME ',
-'                            || CASE WHEN A.TYPE_SUBNAME IS NOT NULL THEN ''.''||A.TYPE_SUBNAME END ',
-'                        WHEN A.DATA_TYPE = ''REF CURSOR'' THEN ''SYS_REFCURSOR'' ',
-'                        ELSE ',
-'                            A.PLS_TYPE'))
+'                            || CASE WHEN (S.SYNONYM_NAME IS NULL OR A.TYPE_OBJECT_TYPE = ''PACKAGE'')'))
 );
 null;
 end;
@@ -16249,7 +16304,13 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-' ',
+'',
+'                            	AND TYPE_OWNER NOT IN (p_Package_Owner, ''PUBLIC'') THEN TYPE_OWNER||''.'' END ',
+'                            || A.TYPE_NAME ',
+'                            || CASE WHEN A.TYPE_SUBNAME IS NOT NULL THEN ''.''||A.TYPE_SUBNAME END ',
+'                        WHEN A.DATA_TYPE = ''REF CURSOR'' THEN ''SYS_REFCURSOR'' ',
+'                        ELSE ',
+'                            A.PLS_TYPE ',
 '                        END RETURN_TYPE,',
 '                        A.TYPE_OBJECT_TYPE',
 '                FROM SYS.ALL_ARGUMENTS A',
@@ -16309,7 +16370,7 @@ wwv_flow_api.append_to_install_script(
 '												p_In_Out => IN_OUT',
 '											)',
 '										|| '');''',
-'                         			when DATA_TYPE = ''TABLE'' and RECORD_TYPE IS NOT NULL  ',
+'                         			when DATA_TYPE = ''TABLE'' and SUB_ITEM_DEGREE > 1',
 '                         				or DATA_TYPE = ''VARRAY''',
 '                         			then  ',
 '										''FOR idx IN 1 .. '' || ARGUMENT_NAME || ''.COUNT LOOP'' || NL(8)',
@@ -16346,9 +16407,6 @@ wwv_flow_api.append_to_install_script(
 '											|| ''idx'' || A.POSITION || '' := '' || ARGUMENT_NAME ',
 '											|| ''.NEXT(idx'' || A.POSITION || '');'' || NL(4)',
 '											|| ''END LOOP;'' ',
-'										/*else ',
-'											ARG_PREFIX || ARGUMENT_NAME || '' := IN_'' || TYPE_SUBNAME ',
-'											|| ''('' || ARGUMENT_NAME || '');''*/',
 '										end',
 '									when DATA_TYPE IN (''TABLE'', ''OBJECT'', ''VARRAY'') then',
 '										''select * bulk collect into '' || ARG_PREFIX || ARGUMENT_NAME',
@@ -16371,7 +16429,7 @@ wwv_flow_api.append_to_install_script(
 '												p_In_Out => ''OUT''',
 '											)',
 '										|| '');''',
-'									when DATA_TYPE = ''TABLE'' and RECORD_TYPE IS NOT NULL  ',
+'									when DATA_TYPE = ''TABLE'' and SUB_ITEM_DEGREE > 1',
 '										or DATA_TYPE = ''VARRAY''',
 '									then',
 '										''FOR idx IN 1 .. '' || ARGUMENT_NAME || ''.COUNT LOOP'' || NL(8)',
@@ -16419,7 +16477,7 @@ wwv_flow_api.append_to_install_script(
 '					SELECT A.PACKAGE_NAME, A.OWNER, A.PROCEDURE_NAME, A.SUBPROGRAM_ID, ',
 '						A.ARGUMENT_NAME, A.DATA_TYPE, A.POSITION, A.TYPE_OWNER, A.TYPE_NAME, A.TYPE_SUBNAME, ',
 '						A.IN_OUT, A.ARGUMENT_TYPE, A.ARG_PREFIX, ',
-'						T.RECORD_TYPE, T.ITEM_TYPE, T.NESTED_TABLE, NVL(T.INDEX_BY, ''PLS_INTEGER'') INDEX_BY',
+'						T.SUB_ITEM_DEGREE, T.INDEX_BY',
 '					FROM (SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, ',
 '								LOWER(ARGUMENT_NAME) ARGUMENT_NAME,',
 '								DATA_TYPE, POSITION, TYPE_OWNER, TYPE_NAME, TYPE_SUBNAME, IN_OUT, ',
@@ -16448,9 +16506,8 @@ wwv_flow_api.append_to_install_script(
 '                RET.RETURN_TYPE,',
 '                RET.TYPE_OBJECT_TYPE, ',
 '                RET.RETURN_TYPE_NAME, RET.RETURN_TYPE_OWNER, RET.RETURN_TYPE_SUBNAME, ',
-'                RET.RETURN_IDX_TYPE, ',
-'                RET.RETURN_RECORD_TYPE, RET.RETURN_NESTED_TABLE,',
-'                RET.RETURN_PLS_TYPE, RET.RETURN_DATA_TYPE, RET.CHAR_USED,',
+'                RET.RETURN_INDEX_BY, ',
+'                RET.RETURN_DATA_TYPE, RET.CHAR_USED,',
 '                RD.RETURN_TYPE DEST_RETURN_TYPE,',
 '                NVL(ARG.ARGS_COUNT,0) ARGS_COUNT,',
 '                NVL(ARG.OUT_COUNT,0) OUT_COUNT,',
@@ -16464,7 +16521,8 @@ wwv_flow_api.append_to_install_script(
 '                        || case when RET.IN_OUT = ''OUT'' then ''FUNCTION'' else ''PROCEDURE'' end',
 '                        || ''\s+''||PRO.PROCEDURE_NAME',
 '                        || case when ARG.ARGS_COUNT > 0 then ''\s*\(.+?\)'' end',
-'                        || case when RET.IN_OUT = ''OUT'' then ''\s*RETURN\s+.*?'' else ''\s*'' end',
+'                        || case when RET.IN_OUT = ''OUT'' then ''\s*RETURN\s+.*?'' else ''\s*'' end -- ?? ''\s*'' ''.*?''',
+'                        || ''(\s+as\s+language\s+java.*)?''',
 '                        || '');'',',
 '                        1, ',
 '                        DENSE_RANK() OVER (PARTITION BY PRO.PROCEDURE_NAME, RET.IN_OUT, SIGN(ARG.ARGS_COUNT) ORDER BY PRO.SUBPROGRAM_ID),',
@@ -16583,7 +16641,7 @@ wwv_flow_api.append_to_install_script(
 '			)',
 '			SELECT TYPE_OWNER, TYPE_NAME, TYPE_SUBNAME, IN_OUT, MAX(lv) lv',
 '			FROM tree_q',
-'			WHERE TABLE_TYPE IN (''TABLE'', ''PL/SQL TABLE'')',
+'			WHERE TABLE_TYPE IN (''TABLE'', ''PL/SQL TABLE'', ''VARRAY'')',
 '			GROUP BY TYPE_OWNER, TYPE_NAME, TYPE_SUBNAME, IN_OUT',
 '			ORDER BY lv DESC, TYPE_SUBNAME;',
 '        TYPE tab_conv_tbl IS TABLE OF tab_conv_cur%ROWTYPE;',
@@ -16729,7 +16787,8 @@ wwv_flow_api.append_to_install_script(
 '                    || v_proc_tbl(ind).ARG_CONVERT_OUT;                   ',
 '                END IF;',
 '                v_sqltext := v_proc_tbl(ind).HEADER;',
-'                if length(v_sqltext) > 0 then ',
+'                if length(v_sqltext) > 0 ',
+'                and REGEXP_INSTR(v_sqltext, ''\s+as\s+language\s+java\s+'', 1, 1, 1, ''in'') = 0 then ',
 '                    if v_proc_tbl(ind).PROC_TYPE = ''FUNCTION''',
 '                    and v_proc_tbl(ind).AGGREGATE = ''NO''',
 '                    and v_proc_tbl(ind).PIPELINED = ''NO''',
@@ -16762,7 +16821,7 @@ wwv_flow_api.append_to_install_script(
 '						|| ''is'' ',
 '                        || NL(4)|| ''lv_temp '' || v_proc_tbl(ind).RETURN_TYPE || '';'' ',
 '                        || case when p_Object_Name != v_proc_tbl(ind).RETURN_TYPE_NAME then ',
-'                        	NL(4)|| ''lv_idx '' || v_proc_tbl(ind).RETURN_IDX_TYPE || '';'' ',
+'                        	NL(4)|| ''lv_idx '' || v_proc_tbl(ind).RETURN_INDEX_BY || '';'' ',
 '                        end',
 '                        || NL(4)|| p_Variable_Name||'' '' || v_proc_tbl(ind).DEST_RETURN_TYPE || '';''',
 '						|| v_proc_tbl(ind).ARG_DECLARE_IN',
@@ -16851,13 +16910,7 @@ wwv_flow_api.append_to_install_script(
 '                    then',
 '                        v_sqltext := v_sqltext || chr(10) ',
 '						|| ''is'' ',
-'						/*|| case when v_proc_tbl(ind).RETURN_RECORD_TYPE IS NOT NULL ',
-'							then NL(4) || ''lv_temp '' || v_proc_tbl(ind).RETURN_RECORD_TYPE || '';'' ',
-'						end -- one row of the table !!',
-'						*/',
-'						|| NL(4) || p_Variable_Name||'' '' || v_proc_tbl(ind).RETURN_TYPE || '';'' ',
-'						|| v_proc_tbl(ind).ARG_DECLARE_IN',
-'						|| chr(1'))
+'						|| NL(4) || p_Variable_Name||'))
 );
 null;
 end;
@@ -16866,7 +16919,9 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'0) ',
+''' '' || v_proc_tbl(ind).RETURN_TYPE || '';'' ',
+'						|| v_proc_tbl(ind).ARG_DECLARE_IN',
+'						|| chr(10) ',
 '                        || ''begin'' || chr(10) ',
 '                        || v_trace_call',
 '                        || ''    select cast(multiset(select * from table ('' || chr(10) ',
@@ -16887,9 +16942,6 @@ wwv_flow_api.append_to_install_script(
 '                    then',
 '                        v_sqltext := v_sqltext || chr(10) ',
 '						|| ''is'' ',
-'						|| case when v_proc_tbl(ind).RETURN_RECORD_TYPE IS NOT NULL ',
-'							then NL(4) || ''lv_temp '' || v_proc_tbl(ind).RETURN_RECORD_TYPE || '';'' ',
-'						end -- one row of the table !! ??',
 '						|| NL(4) || p_Variable_Name||'' '' || v_proc_tbl(ind).DEST_RETURN_TYPE || '';'' ',
 '						|| v_proc_tbl(ind).ARG_DECLARE_IN',
 '						|| chr(10) ',

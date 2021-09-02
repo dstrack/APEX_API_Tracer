@@ -1,13 +1,21 @@
 /*
-Copyright 2019 Dirk Strack, Strack Software Development
+Copyright 2021 Dirk Strack, Strack Software Development
 
-All Rights Reserved
-Unauthorized copying of this file, via any medium is strictly prohibited
-Proprietary and confidential
-Written by Dirk Strack <dirk_strack@yahoo.de>, Feb 2019
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
+------------------------------------------------------------------------------------------
 /*
-api_trace enables tracing of calls to prepared packages 
+api_trace enables tracing of call with arguments to prepared packages 
 */
 
 CREATE OR REPLACE PACKAGE api_trace
@@ -15,14 +23,22 @@ AUTHID CURRENT_USER
 IS
     c_APEX_Logging_Start_Call  CONSTANT VARCHAR2(1000) := 'apex_debug.log_long_message(p_message=>''API call: '' || %s, p_level=>5);';
     c_APEX_Logging_Exit_Call CONSTANT VARCHAR2(1000) := 'apex_debug.log_long_message(p_message=>''API exit: '' || %s, p_level=>5);';
-    c_APEX_Logging_API_Call    CONSTANT VARCHAR2(1000) := 'apex_debug.log_long_message(p_message=>''API: '' || %s, p_level=>5);';
+    c_APEX_Logging_API_Call CONSTANT VARCHAR2(1000) := 'apex_debug.log_long_message(p_message=>''API: '' || %s, p_level=>5);';
     c_APEX_Logging_API_Exception CONSTANT VARCHAR2(1000) := 'apex_debug.log_long_message(p_message=>''API Exception: '' || %s, p_level=>5);';
+	c_DBMS_OUTPUT_API_Call 	CONSTANT VARCHAR2(1000) := 'DBMS_OUTPUT.PUT_LINE(''API: '' || %s);';
     -- p_level=>4; -- default level if debugging is enabled (for example, used by apex_application.debug)
     -- p_level=>5; -- application: messages when procedures/functions are entered
     -- p_level=>6; -- application: other messages within procedures/functions
-    c_format_max_length CONSTANT NUMBER := 32700;
-    c_value_max_length  CONSTANT NUMBER := 1000;
-	c_Package_Name             CONSTANT VARCHAR2(128) := lower($$plsql_unit);
+    c_format_max_length 	CONSTANT NUMBER := 32700;
+    c_value_max_length  	CONSTANT NUMBER := 1000;
+	c_Package_Name          CONSTANT VARCHAR2(128) := lower($$plsql_unit);
+	
+	g_Logging_Start_Call	VARCHAR2(32767) := c_APEX_Logging_Start_Call;
+	g_Logging_Exit_Call 	VARCHAR2(32767) := c_APEX_Logging_Exit_Call;
+	g_Logging_API_Call    	VARCHAR2(32767) := c_APEX_Logging_API_Call;
+	g_Logging_API_Exception VARCHAR2(32767) := c_APEX_Logging_API_Exception;
+	PROCEDURE Init_APEX_Logging;
+	PROCEDURE Init_DBMS_OUTPUT;
     FUNCTION Literal ( p_Text VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC;
     FUNCTION Literal ( p_Value BLOB, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
@@ -56,31 +72,31 @@ IS
 
 	-- log function or procedure call with all arguments
     FUNCTION Dyn_Log_Call(
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,	-- string with a %s placeholder for the call arguments.
+        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Call,	-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2; 
 	-- log function call with all arguments and return value
     FUNCTION Dyn_Log_Function_Call(
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call, -- string with a %s placeholder for the call arguments.
+        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Call, -- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2;
 	-- log function or procedure call with all IN or IN/OUT arguments
     FUNCTION Dyn_Log_Start (
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,-- string with a %s placeholder for the call arguments.
+        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_Start_Call,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2;
 	-- log function or procedure call with all OUT or IN/OUT arguments
     FUNCTION Dyn_Log_Exit (
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.
+        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2;
 	-- log function exception with all arguments and error stack
     FUNCTION Dyn_Log_Exception (
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- string with a %s placeholder for the call arguments.
+        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Exception,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0,                             -- identifier of a overloded funtion in order of occurence.
         p_format_error_function IN VARCHAR2 DEFAULT 'DBMS_UTILITY.FORMAT_ERROR_STACK' -- function for formating for the current error. The output is concatinated to the message.
@@ -93,6 +109,22 @@ CREATE OR REPLACE PACKAGE BODY api_trace
 IS
     c_Quote CONSTANT VARCHAR2(1) := chr(39);	-- Quote Character
 
+	PROCEDURE Init_APEX_Logging IS
+    BEGIN
+		g_Logging_Start_Call	:= c_APEX_Logging_Start_Call;
+		g_Logging_Exit_Call 	:= c_APEX_Logging_Exit_Call;
+		g_Logging_API_Call    	:= c_APEX_Logging_API_Call;
+		g_Logging_API_Exception := c_APEX_Logging_API_Exception;
+	END Init_APEX_Logging;
+
+	PROCEDURE Init_DBMS_OUTPUT IS
+    BEGIN
+		g_Logging_Start_Call	:= c_DBMS_OUTPUT_API_Call;
+		g_Logging_Exit_Call 	:= c_DBMS_OUTPUT_API_Call;
+		g_Logging_API_Call    	:= c_DBMS_OUTPUT_API_Call;
+		g_Logging_API_Exception := c_DBMS_OUTPUT_API_Call;
+	END Init_DBMS_OUTPUT;
+	
     FUNCTION Literal ( p_Text VARCHAR2, p_value_max_length PLS_INTEGER DEFAULT c_value_max_length )
     RETURN VARCHAR2 DETERMINISTIC
     IS
@@ -326,7 +358,7 @@ IS
     
 	-- log function or procedure call with all arguments
     FUNCTION Dyn_Log_Call(
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,   	 -- string with a %s placeholder for the call arguments.
+        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Call,   	 -- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT c_value_max_length,                      -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                                  -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2
@@ -350,7 +382,7 @@ IS
 
 	-- log function call with all arguments and return value
     FUNCTION Dyn_Log_Function_Call(
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Call,   	 -- string with a %s placeholder for the call arguments.
+        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Call,   	 -- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT c_value_max_length,                      -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                                  -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2
@@ -375,7 +407,7 @@ IS
 
 	-- log function or procedure call with all IN or IN/OUT arguments
     FUNCTION Dyn_Log_Start (
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Start_Call,-- string with a %s placeholder for the call arguments.
+        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_Start_Call,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2
@@ -399,7 +431,7 @@ IS
 
 	-- log function or procedure call with all OUT or IN/OUT arguments
     FUNCTION Dyn_Log_Exit (
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.
+        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_Exit_Call,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0                             -- identifier of a overloded funtion in order of occurence.
     ) RETURN VARCHAR2
@@ -423,7 +455,7 @@ IS
     
 	-- log function exception with all arguments and error stack
     FUNCTION Dyn_Log_Exception (
-        p_Logging_Call IN VARCHAR2 DEFAULT c_APEX_Logging_API_Exception,-- string with a %s placeholder for the call arguments.
+        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Exception,-- string with a %s placeholder for the call arguments.
         p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
         p_overload IN INTEGER DEFAULT 0,                             -- identifier of a overloded funtion in order of occurence.
         p_format_error_function IN VARCHAR2 DEFAULT 'DBMS_UTILITY.FORMAT_ERROR_STACK' -- function for formating for the current error. The output is concatinated to the message.

@@ -1,3 +1,18 @@
+/*
+Copyright 2021 Dirk Strack, Strack Software Development
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 ------------------------------------------------------------------------------------------
 CREATE OR REPLACE PACKAGE BODY package_tracer
 IS
@@ -100,7 +115,7 @@ IS
 			and NOT EXISTS (
             	select * from SYS.ALL_ARGUMENTS A
 				where (A.DATA_TYPE IN ('UNDEFINED')
-					OR A.DATA_TYPE = 'OPAQUE/XMLTYPE' AND A.TYPE_SUBNAME LIKE'<%>') 
+					OR A.TYPE_SUBNAME LIKE'<%>') 
 				and A.PACKAGE_NAME = SYN.TABLE_NAME
 				and A.OWNER = SYN.TABLE_OWNER
             )
@@ -123,8 +138,10 @@ IS
             )
             and not (SYN.TABLE_OWNER = 'SYS' -- package defines nested record types for function arguments
             	and SYN.TABLE_NAME IN (
-                	'OWA_COOKIE','OWA_TEXT',
-                	'DBMS_METADATA','DBMS_JAVA','DBMS_STAT_FUNCS','DBMS_DEBUG','DBMS_TF','DBMS_UTILITY')
+					'DBMS_DEBUG',		-- PLS-00307: Zu viele Deklarationen von 'GET_ENCODED_STACK_FOR_CLIENT' entsprechen diesem Aufruf
+					'DBMS_TF',			-- because argument name <V2_TABLE_1> must be declared
+					'DBMS_UTILITY'		-- because of conditional compilation condition in function header
+            	)
             )
             and SYN.SYNONYM_NAME NOT IN (
             	'API_TRACE',				-- because package_tracer is dependent on this object 
@@ -133,7 +150,6 @@ IS
             	'APEX_DEBUG', 				-- because package_tracer is dependent on this synonyms
             	'APEX_APPLICATION',			-- because global variables are defined
             	'APEX_PLUGIN',				-- because the second synonym WWV_FLOW_PLUGIN_API is used in other packages
-                'CTX_DOC',					-- package defines nested record types for function arguments
                 'DBMS_DIMENSION', 			-- PLS-00307: Zu viele Deklarationen von 'VALIDATE_DIMENSION' entsprechen diesem Aufruf
                 'DBMS_SODA_USER_ADMIN', 	-- PLS-00201
                 'DBMS_LOB'  				-- PLS-00452: Unterprogramm 'DBFS_LINK_GENERATE_PATH' verstößt gegen sein zugeordnetes Pragma
@@ -1754,7 +1770,7 @@ IS
 		for cur in (
 			-- get the details of S.Item_type in T.*
 			select DISTINCT S.Item_Name, S.Item_Sequence, 
-				S.Item_Type, S.Table_Type, S.Nested_Table,
+				S.Item_Type, S.Table_Type, 
 				T.TABLE_TYPE SUB_Table_Type,
 				T.Package_Owner, T.Package_Name, T.Type_Name SUB_Type_Name
 			from MV_PACKAGE_RECORD_TYPES S 
@@ -1792,7 +1808,7 @@ IS
 					p_Owner => p_Owner,
 					p_In_Out => p_In_Out
 				) || ')';
-			elsif cur.SUB_Table_Type = 'PL/SQL TABLE'
+			elsif cur.SUB_Table_Type IN ('PL/SQL TABLE', 'TABLE', 'VARRAY')
 			and cur.Package_Name = p_Package_Name -- only local types need conversion
 			then 
 				v_function_name := case when p_In_Out IN ('IN', 'IN/OUT') 
@@ -1836,7 +1852,8 @@ IS
 			-- get the details of S.Item_type in T.*
 			select DISTINCT S.Type_Name, S.Item_Sequence, 
 				S.Package_Name, S.Package_Owner,
-				S.Item_Type, S.Table_Type, S.Index_By, S.Nested_Table,
+				S.Item_Type, S.Table_Type, 
+				case when S.Table_Type = 'PL/SQL TABLE' then S.Index_By else 'PLS_INTEGER' end Index_By, 
 				T.Package_Name SUB_Package_Name, 
 				T.Package_Owner SUB_Package_Owner,
 				T.Type_Name SUB_Type_Name, 
@@ -1849,7 +1866,7 @@ IS
 			where S.Package_Name = p_Type_Name
 			and S.Package_Owner = p_Type_Owner
 			and S.Type_Name = p_Type_Subname
-			and S.Table_Type = 'PL/SQL TABLE'
+			and S.Table_Type IN ('PL/SQL TABLE', 'TABLE', 'VARRAY')
 			order by S.Item_Sequence
 		) loop
 			if (cur.Package_Owner = p_Package_Owner -- types of same schema and package can be converted with a function
@@ -1989,8 +2006,7 @@ IS
         IS
             WITH TYPES_Q AS (
 				SELECT S.Package_Name, S.Package_Owner, S.Type_Name, 
-					S.Item_Type, S.Index_By, S.Nested_Table, S.Table_Type,
-					case when COUNT(*) > 1 then S.Item_Type end Record_Type,
+					S.Index_By, S.Table_Type,
 					COUNT(*) Sub_Item_Degree
 				FROM MV_PACKAGE_RECORD_TYPES S
 				LEFT OUTER JOIN MV_PACKAGE_RECORD_TYPES T 
@@ -1999,18 +2015,15 @@ IS
 					or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name and S.Package_Owner = T.Package_Owner)
 				WHERE (S.Table_Type != 'RECORD' or S.Nested_Table = 'Y' ) --  Important
 				GROUP BY S.Package_Name, S.Package_Owner, S.Type_Name, 
-					S.Item_Type, S.Index_By, S.Nested_Table, S.Table_Type
+					S.Index_By, S.Table_Type
             ), RETURN_Q AS (
                 SELECT A.PACKAGE_NAME, A.OWNER, A.OBJECT_NAME PROCEDURE_NAME, A.SUBPROGRAM_ID, 
                         A.IN_OUT, 
-                        A.PLS_TYPE RETURN_PLS_TYPE, 
                         A.DATA_TYPE RETURN_DATA_TYPE,
                         A.TYPE_NAME RETURN_TYPE_NAME,
                         A.TYPE_OWNER RETURN_TYPE_OWNER,
                         A.TYPE_SUBNAME RETURN_TYPE_SUBNAME,
-                        NVL(T.INDEX_BY, 'PLS_INTEGER') RETURN_IDX_TYPE,
-                        T.RECORD_TYPE RETURN_RECORD_TYPE,
-                        T.NESTED_TABLE RETURN_NESTED_TABLE,
+                        T.INDEX_BY RETURN_INDEX_BY,
                         A.CHAR_USED,
                         CASE WHEN A.TYPE_NAME IS NOT NULL THEN 
                             CASE WHEN A.DATA_TYPE = 'REF' THEN ' ref ' END
@@ -2080,7 +2093,7 @@ IS
 												p_In_Out => IN_OUT
 											)
 										|| ');'
-                         			when DATA_TYPE = 'TABLE' and RECORD_TYPE IS NOT NULL  
+                         			when DATA_TYPE = 'TABLE' and SUB_ITEM_DEGREE > 1
                          				or DATA_TYPE = 'VARRAY'
                          			then  
 										'FOR idx IN 1 .. ' || ARGUMENT_NAME || '.COUNT LOOP' || NL(8)
@@ -2117,9 +2130,6 @@ IS
 											|| 'idx' || A.POSITION || ' := ' || ARGUMENT_NAME 
 											|| '.NEXT(idx' || A.POSITION || ');' || NL(4)
 											|| 'END LOOP;' 
-										/*else 
-											ARG_PREFIX || ARGUMENT_NAME || ' := IN_' || TYPE_SUBNAME 
-											|| '(' || ARGUMENT_NAME || ');'*/
 										end
 									when DATA_TYPE IN ('TABLE', 'OBJECT', 'VARRAY') then
 										'select * bulk collect into ' || ARG_PREFIX || ARGUMENT_NAME
@@ -2142,7 +2152,7 @@ IS
 												p_In_Out => 'OUT'
 											)
 										|| ');'
-									when DATA_TYPE = 'TABLE' and RECORD_TYPE IS NOT NULL  
+									when DATA_TYPE = 'TABLE' and SUB_ITEM_DEGREE > 1
 										or DATA_TYPE = 'VARRAY'
 									then
 										'FOR idx IN 1 .. ' || ARGUMENT_NAME || '.COUNT LOOP' || NL(8)
@@ -2190,7 +2200,7 @@ IS
 					SELECT A.PACKAGE_NAME, A.OWNER, A.PROCEDURE_NAME, A.SUBPROGRAM_ID, 
 						A.ARGUMENT_NAME, A.DATA_TYPE, A.POSITION, A.TYPE_OWNER, A.TYPE_NAME, A.TYPE_SUBNAME, 
 						A.IN_OUT, A.ARGUMENT_TYPE, A.ARG_PREFIX, 
-						T.RECORD_TYPE, T.ITEM_TYPE, T.NESTED_TABLE, NVL(T.INDEX_BY, 'PLS_INTEGER') INDEX_BY
+						T.SUB_ITEM_DEGREE, T.INDEX_BY
 					FROM (SELECT PACKAGE_NAME, OWNER, OBJECT_NAME PROCEDURE_NAME, SUBPROGRAM_ID, 
 								LOWER(ARGUMENT_NAME) ARGUMENT_NAME,
 								DATA_TYPE, POSITION, TYPE_OWNER, TYPE_NAME, TYPE_SUBNAME, IN_OUT, 
@@ -2219,9 +2229,8 @@ IS
                 RET.RETURN_TYPE,
                 RET.TYPE_OBJECT_TYPE, 
                 RET.RETURN_TYPE_NAME, RET.RETURN_TYPE_OWNER, RET.RETURN_TYPE_SUBNAME, 
-                RET.RETURN_IDX_TYPE, 
-                RET.RETURN_RECORD_TYPE, RET.RETURN_NESTED_TABLE,
-                RET.RETURN_PLS_TYPE, RET.RETURN_DATA_TYPE, RET.CHAR_USED,
+                RET.RETURN_INDEX_BY, 
+                RET.RETURN_DATA_TYPE, RET.CHAR_USED,
                 RD.RETURN_TYPE DEST_RETURN_TYPE,
                 NVL(ARG.ARGS_COUNT,0) ARGS_COUNT,
                 NVL(ARG.OUT_COUNT,0) OUT_COUNT,
@@ -2235,7 +2244,8 @@ IS
                         || case when RET.IN_OUT = 'OUT' then 'FUNCTION' else 'PROCEDURE' end
                         || '\s+'||PRO.PROCEDURE_NAME
                         || case when ARG.ARGS_COUNT > 0 then '\s*\(.+?\)' end
-                        || case when RET.IN_OUT = 'OUT' then '\s*RETURN\s+.*?' else '\s*' end
+                        || case when RET.IN_OUT = 'OUT' then '\s*RETURN\s+.*?' else '\s*' end -- ?? '\s*' '.*?'
+                        || '(\s+as\s+language\s+java.*)?'
                         || ');',
                         1, 
                         DENSE_RANK() OVER (PARTITION BY PRO.PROCEDURE_NAME, RET.IN_OUT, SIGN(ARG.ARGS_COUNT) ORDER BY PRO.SUBPROGRAM_ID),
@@ -2354,7 +2364,7 @@ IS
 			)
 			SELECT TYPE_OWNER, TYPE_NAME, TYPE_SUBNAME, IN_OUT, MAX(lv) lv
 			FROM tree_q
-			WHERE TABLE_TYPE IN ('TABLE', 'PL/SQL TABLE')
+			WHERE TABLE_TYPE IN ('TABLE', 'PL/SQL TABLE', 'VARRAY')
 			GROUP BY TYPE_OWNER, TYPE_NAME, TYPE_SUBNAME, IN_OUT
 			ORDER BY lv DESC, TYPE_SUBNAME;
         TYPE tab_conv_tbl IS TABLE OF tab_conv_cur%ROWTYPE;
@@ -2500,7 +2510,8 @@ IS
                     || v_proc_tbl(ind).ARG_CONVERT_OUT;                   
                 END IF;
                 v_sqltext := v_proc_tbl(ind).HEADER;
-                if length(v_sqltext) > 0 then 
+                if length(v_sqltext) > 0 
+                and REGEXP_INSTR(v_sqltext, '\s+as\s+language\s+java\s+', 1, 1, 1, 'in') = 0 then 
                     if v_proc_tbl(ind).PROC_TYPE = 'FUNCTION'
                     and v_proc_tbl(ind).AGGREGATE = 'NO'
                     and v_proc_tbl(ind).PIPELINED = 'NO'
@@ -2533,7 +2544,7 @@ IS
 						|| 'is' 
                         || NL(4)|| 'lv_temp ' || v_proc_tbl(ind).RETURN_TYPE || ';' 
                         || case when p_Object_Name != v_proc_tbl(ind).RETURN_TYPE_NAME then 
-                        	NL(4)|| 'lv_idx ' || v_proc_tbl(ind).RETURN_IDX_TYPE || ';' 
+                        	NL(4)|| 'lv_idx ' || v_proc_tbl(ind).RETURN_INDEX_BY || ';' 
                         end
                         || NL(4)|| p_Variable_Name||' ' || v_proc_tbl(ind).DEST_RETURN_TYPE || ';'
 						|| v_proc_tbl(ind).ARG_DECLARE_IN
@@ -2622,10 +2633,6 @@ IS
                     then
                         v_sqltext := v_sqltext || chr(10) 
 						|| 'is' 
-						/*|| case when v_proc_tbl(ind).RETURN_RECORD_TYPE IS NOT NULL 
-							then NL(4) || 'lv_temp ' || v_proc_tbl(ind).RETURN_RECORD_TYPE || ';' 
-						end -- one row of the table !!
-						*/
 						|| NL(4) || p_Variable_Name||' ' || v_proc_tbl(ind).RETURN_TYPE || ';' 
 						|| v_proc_tbl(ind).ARG_DECLARE_IN
 						|| chr(10) 
@@ -2649,9 +2656,6 @@ IS
                     then
                         v_sqltext := v_sqltext || chr(10) 
 						|| 'is' 
-						|| case when v_proc_tbl(ind).RETURN_RECORD_TYPE IS NOT NULL 
-							then NL(4) || 'lv_temp ' || v_proc_tbl(ind).RETURN_RECORD_TYPE || ';' 
-						end -- one row of the table !! ??
 						|| NL(4) || p_Variable_Name||' ' || v_proc_tbl(ind).DEST_RETURN_TYPE || ';' 
 						|| v_proc_tbl(ind).ARG_DECLARE_IN
 						|| chr(10) 

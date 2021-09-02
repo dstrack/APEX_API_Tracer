@@ -27,6 +27,8 @@ When the Option 'Logging of Procedure Start' is set to No, then each function an
 
 For arguments and return values of type table, pl/sql table, type or varray the Count of rows is logged. For records the record type and individual elements are logged.
 
+For arguments where the name is one of p_password, p_pass, p_wallet_pwd, p_web_password, p_old_password, p_new_password the value is obfuscated. 
+
 For other packages where the above-mentioned conditions do not apply, you can manually add generated code with invocations to the api_trace package to support logging for prepared functions or procedures in your own packages.
 
 # Usage
