@@ -928,7 +928,7 @@ IS
         end if;
     END Resolve_Synonym;
 
-	FUNCTION NL(p_Indent PLS_INTEGER) RETURN VARCHAR2 DETERMINISTIC
+	FUNCTION NL(p_Indent PLS_INTEGER) RETURN VARCHAR2
 	is
         $IF DBMS_DB_VERSION.VERSION >= 12 $THEN
             PRAGMA UDF;
@@ -936,7 +936,7 @@ IS
 	begin
 		return chr(10) || RPAD(' ', p_Indent);
 	end NL;
-    FUNCTION INDENT(p_Text VARCHAR2, p_Indent PLS_INTEGER) RETURN VARCHAR2 DETERMINISTIC
+    FUNCTION INDENT(p_Text VARCHAR2, p_Indent PLS_INTEGER) RETURN VARCHAR2
 	is
         $IF DBMS_DB_VERSION.VERSION >= 12 $THEN
             PRAGMA UDF;
@@ -970,7 +970,7 @@ IS
     	p_Logging_Call IN VARCHAR2,
     	p_Default_Call IN VARCHAR2,
     	p_Overload IN INTEGER
-    ) return VARCHAR2 DETERMINISTIC
+    ) return VARCHAR2
     is
         $IF DBMS_DB_VERSION.VERSION >= 12 $THEN
             PRAGMA UDF;

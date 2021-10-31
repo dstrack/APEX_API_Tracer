@@ -281,8 +281,8 @@ IS
         p_return_variable VARCHAR2 DEFAULT NULL -- optional name of the variable containing the function result. Usually 'lv_result'
     ) RETURN VARCHAR2;
 
-	FUNCTION NL(p_Indent PLS_INTEGER) RETURN VARCHAR2 DETERMINISTIC;
-	FUNCTION INDENT(p_Text VARCHAR2, p_Indent PLS_INTEGER) RETURN VARCHAR2 DETERMINISTIC;
+	FUNCTION NL(p_Indent PLS_INTEGER) RETURN VARCHAR2;
+	FUNCTION INDENT(p_Text VARCHAR2, p_Indent PLS_INTEGER) RETURN VARCHAR2;
     FUNCTION Replace_Substitution (
     	p_String IN VARCHAR2,
     	p_Procedure_Name IN VARCHAR2,
@@ -293,7 +293,7 @@ IS
     	p_Logging_Call IN VARCHAR2,
     	p_Default_Call IN VARCHAR2,
     	p_Overload IN INTEGER
-    ) return VARCHAR2 DETERMINISTIC;
+    ) return VARCHAR2;
     -- helper query for listing the procedures with parameters of a package
     FUNCTION Dyn_Log_Call_List (
         p_Package_Name IN VARCHAR2,
