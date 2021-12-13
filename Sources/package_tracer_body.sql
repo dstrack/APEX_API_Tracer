@@ -18,6 +18,7 @@ CREATE OR REPLACE PACKAGE BODY package_tracer
 IS
     c_Quote CONSTANT VARCHAR2(1) := chr(39);    -- Quote Character
     c_DQuote CONSTANT VARCHAR2(1) := chr(34);   -- Double Quote Character
+    c_Format_Error_Function CONSTANT VARCHAR2(64) := 'DBMS_UTILITY.FORMAT_ERROR_STACK'; -- function for formating for the current error. The output is concatinated to the message.
     
     FUNCTION in_list(
         p_string in clob,
@@ -1191,11 +1192,8 @@ IS
 								p_synonym_name => PACKAGE_PROCEDURE_NAME,
 								p_bind_char => null,
 								p_overload => PRO.OVERLOAD,
-								p_in_out => 'IN/OUT', 
-								p_return_variable => 
-									case when RETURN_TYPE IS NOT NULL
-									then p_Variable_Name end
-							)
+								p_in_out => 'IN/OUT'
+							) || chr(10) || '     || ' || c_format_error_function
 						), p_Indent + 4
 					)
 					|| NL(p_Indent + 4) || 'RAISE;'
@@ -1237,11 +1235,8 @@ IS
 								p_synonym_name => PACKAGE_PROCEDURE_NAME,
 								p_bind_char => null,
 								p_overload => PRO.OVERLOAD,
-								p_in_out => 'IN/OUT', 
-								p_return_variable => 
-									case when RETURN_TYPE IS NOT NULL
-									then p_Variable_Name end
-							)
+								p_in_out => 'IN/OUT'
+							) || chr(10) || '     || ' || c_format_error_function
 						), p_Indent + 4
 					)
 					|| NL(p_Indent + 4) || 'RAISE;'

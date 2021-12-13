@@ -455,9 +455,9 @@ IS
     
 	-- log function exception with all arguments and error stack
     FUNCTION Dyn_Log_Exception (
-        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Exception,-- string with a %s placeholder for the call arguments.
-        p_value_max_length IN INTEGER DEFAULT c_value_max_length,                 -- maximum length of an single procedure argument value in the log message
-        p_overload IN INTEGER DEFAULT 0,                             -- identifier of a overloded funtion in order of occurence.
+        p_Logging_Call IN VARCHAR2 DEFAULT g_Logging_API_Exception,	-- string with a %s placeholder for the call arguments.
+        p_value_max_length IN INTEGER DEFAULT c_value_max_length,   -- maximum length of an single procedure argument value in the log message
+        p_overload IN INTEGER DEFAULT 0,                            -- identifier of a overloded funtion in order of occurence.
         p_format_error_function IN VARCHAR2 DEFAULT 'DBMS_UTILITY.FORMAT_ERROR_STACK' -- function for formating for the current error. The output is concatinated to the message.
     ) RETURN VARCHAR2
     IS
