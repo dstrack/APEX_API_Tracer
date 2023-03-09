@@ -1048,16 +1048,21 @@ IS
         ), ARGUMENTS_Q AS (
             SELECT PACKAGE_NAME, OWNER, OBJECT_NAME, SUBPROGRAM_ID, OVERLOAD,
                 LISTAGG(CASE WHEN POSITION > 0 then PRINT_ARGUMENT_NAME END, ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST,
+                LISTAGG(PRINT_ARGUMENT_NAME, ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_FN,
                 LISTAGG(CASE WHEN IN_OUT IN ('IN') THEN PRINT_ARGUMENT_NAME END, ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_IN,
                 LISTAGG(CASE WHEN IN_OUT IN ('IN/OUT', 'OUT') THEN PRINT_ARGUMENT_NAME END, ',') WITHIN GROUP (ORDER BY SEQUENCE) PARAM_LIST_OUT,
                 COUNT(DISTINCT CASE WHEN IN_OUT IN ('IN/OUT', 'OUT') THEN PRINT_ARGUMENT_NAME END) OUT_COUNT,
                 COUNT(*) ARGS_COUNT
             FROM (
             	SELECT PACKAGE_NAME, OWNER, OBJECT_NAME, SUBPROGRAM_ID, POSITION,
-            		OVERLOAD, IN_OUT, SEQUENCE, ARGUMENT_NAME,
+            		OVERLOAD, IN_OUT, 
+            		case when ARGUMENT_NAME IS NULL then 1000+SEQUENCE -- return type in last position
+            			else SEQUENCE 
+            		end SEQUENCE, 
+            		ARGUMENT_NAME,
             		CASE WHEN package_tracer.Is_Printable_DATA_Type(A.DATA_TYPE) = 'YES' THEN 
 						LOWER(NVL(ARGUMENT_NAME, p_Variable_Name))
-					WHEN A.DATA_TYPE IN ('TABLE', 'PL/SQL TABLE', 'VARRAY') THEN 
+					WHEN A.DATA_TYPE IN ('TABLE', 'PL/SQL TABLE', 'VARRAY') AND ARGUMENT_NAME IS NULL THEN 
 						p_Variable_Name || '.COUNT'
             		END PRINT_ARGUMENT_NAME
 				FROM SYS.ALL_ARGUMENTS A
@@ -1125,10 +1130,7 @@ IS
             	|| case when PRO.RETURN_TYPE IS NOT NULL then 
                     NL(v_Indent)
                     || 'USING '
-					|| case when PARAM_LIST IS NOT NULL then 
-						PARAM_LIST || ','
-					end
- 					|| p_Variable_Name 
+                    || PARAM_LIST_FN
             	when PARAM_LIST IS NOT NULL then 
                     NL(v_Indent)
                     || 'USING '
@@ -1307,7 +1309,7 @@ IS
                 AS PRO_EXCEPTION,
 				PRO.OWNER || '.' || PRO.OBJECT_NAME || '.' || PRO.PROCEDURE_NAME CALLING_SUBPROG,
 				INITCAP(PRO.OBJECT_NAME) || '.' || INITCAP(PRO.PROCEDURE_NAME) PACKAGE_PROCEDURE_NAME,
-                ARG.PARAM_LIST, ARG.PARAM_LIST_IN, ARG.PARAM_LIST_OUT, ARG.OUT_COUNT, 
+                ARG.PARAM_LIST, ARG.PARAM_LIST_FN, ARG.PARAM_LIST_IN, ARG.PARAM_LIST_OUT, ARG.OUT_COUNT, 
                 RET.RETURN_PLS_TYPE, RET.RETURN_DATA_TYPE, 
                 RET.RETURN_TYPE,
                 Replace_Substitution(
