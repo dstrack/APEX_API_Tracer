@@ -257,8 +257,6 @@ IS
         p_Data_Type IN VARCHAR2
     ) RETURN VARCHAR2 DETERMINISTIC;
     
-	FUNCTION Formatted_Name(p_arg_name VARCHAR2) RETURN VARCHAR2; 
-
 	FUNCTION Literal_Call (
 		p_Argument_Name VARCHAR2, 
 		p_Formatted_Name VARCHAR2,

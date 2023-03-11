@@ -721,23 +721,6 @@ IS
                 'PL/SQL BOOLEAN', 'ROWID', 'TIME', 'TIME WITH TIME ZONE', 'TIMESTAMP', 'TIMESTAMP WITH LOCAL TIME ZONE', 
                 'TIMESTAMP WITH TIME ZONE', 'UROWID', 'VARCHAR2') then 'YES' else 'NO' end;
     END Is_Printable_DATA_Type;
-
-	FUNCTION Formatted_Name(p_arg_name VARCHAR2) RETURN VARCHAR2 
-	IS 
-        $IF DBMS_DB_VERSION.VERSION >= 12 $THEN
-            PRAGMA UDF;
-        $END
-		v_offset NUMBER;
-		v_result VARCHAR2(200);
-	BEGIN 
-		v_offset := INSTR(p_arg_name, '_');
-		if v_offset > 0 and v_offset < 4 then 
-			v_result := lower(substr(p_arg_name, 1, v_offset)) || initcap(substr(p_arg_name, v_offset+1));
-		else 
-			v_result := lower(p_arg_name);
-		end if;
-		RETURN v_result;
-	END Formatted_Name;
 	
 	FUNCTION Literal_Call (
 		p_Argument_Name VARCHAR2, 
@@ -828,7 +811,7 @@ IS
             if (c_cur.IN_OUT != 'IN' or p_in_out IN ('IN', 'IN/OUT')) 
             and c_cur.ARGUMENT_NAME IS NOT NULL then
                 v_count := v_count + 1;
-                v_argument_name := Formatted_Name(c_cur.ARGUMENT_NAME);
+                v_argument_name := api_trace.Formatted_Name(c_cur.ARGUMENT_NAME);
                 if v_result_str IS NOT NULL then 
                     v_result_str := v_result_str 
                     || case when mod(c_cur.POSITION-1, v_argument_per_line) = 0 then c_conop || c_newline else chr(10) end
@@ -859,7 +842,7 @@ IS
 				|| c_conop
 				|| Literal_Call (
 					p_Argument_Name => p_return_variable, 
-					p_Formatted_Name => p_bind_char || Formatted_Name(p_return_variable),
+					p_Formatted_Name => p_bind_char || api_trace.Formatted_Name(p_return_variable),
 					p_Data_Type => c_cur.DATA_TYPE,
 					p_Record_Conversion => c_cur.RECORD_CONVERSION,
 					p_value_max_length => p_value_max_length
@@ -1269,17 +1252,25 @@ IS
 					p_Package_Name => PRO.OBJECT_NAME,
 					p_Return_Type => RET.RETURN_TYPE
                 )
-                || REGEXP_SUBSTR (v_Header,  
+                || NVL(REGEXP_SUBSTR (v_Header,  
 					'('
 					|| case when RET.IN_OUT = 'OUT' then 'FUNCTION' else 'PROCEDURE' end
 					|| '\s+'||PRO.PROCEDURE_NAME
-					|| case when ARG.ARGS_COUNT > 0 then '\s*\(.+?\)' end
+					|| case when ARG.ARGS_COUNT > 1 then '\s*\(.+?\)' end
 					|| case when RET.IN_OUT = 'OUT' then '\s*RETURN\s+.*?' else '\s*' end
 					|| ');',
 					1, 
 					DENSE_RANK() OVER (PARTITION BY PRO.PROCEDURE_NAME, RET.IN_OUT, SIGN(ARG.ARGS_COUNT) ORDER BY PRO.SUBPROGRAM_ID),
 					'in', 1
-				) AS HEADER, -- find original procedure header with parameter default values
+					),
+				case when RET.IN_OUT = 'OUT' then 'FUNCTION' else 'PROCEDURE' end
+					|| ' ' || PRO.PROCEDURE_NAME
+					|| case when ARG.ARGS_COUNT > 1 then '(' || PARAM_LIST || ')' end
+					|| case when RET.IN_OUT = 'OUT' then ' RETURN ' || RET.RETURN_TYPE end
+					|| '; '
+					|| ' -- pattern NOT FOUND'
+				)
+				 AS HEADER, -- find original procedure header with parameter default values
             	case when RET.RETURN_TYPE IS NOT NULL then 
             		NL(p_Indent + 4) || p_Variable_Name || ' ' || LOWER(RET.RETURN_TYPE) || ';'
             	end
