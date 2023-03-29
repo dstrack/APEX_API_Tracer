@@ -27,7 +27,7 @@ prompt APPLICATION 103 - APEX API Tracer
 -- Application Export:
 --   Application:     103
 --   Name:            APEX API Tracer
---   Date and Time:   19:49 Saturday March 11, 2023
+--   Date and Time:   16:36 Wednesday March 29, 2023
 --   Exported By:     DIRK
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -107,7 +107,7 @@ wwv_flow_api.create_flow(
 ,p_public_user=>'APEX_PUBLIC_USER'
 ,p_proxy_server=>nvl(wwv_flow_application_install.get_proxy,'')
 ,p_no_proxy_domains=>nvl(wwv_flow_application_install.get_no_proxy_domains,'')
-,p_flow_version=>'Release 1.3.4'
+,p_flow_version=>'Release 1.3.5'
 ,p_flow_status=>'AVAILABLE_W_EDIT_LINK'
 ,p_flow_unavailable_text=>'This application is currently unavailable at this time.'
 ,p_exact_substitutions_only=>'Y'
@@ -120,7 +120,7 @@ wwv_flow_api.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'APEX API Tracer'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20230311194845'
+,p_last_upd_yyyymmddhh24miss=>'20230329163527'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>9
 ,p_ui_type_name => null
@@ -15511,27 +15511,31 @@ wwv_flow_api.append_to_install_script(
 '                )',
 '                || NVL(REGEXP_SUBSTR (v_Header,  ',
 '					''(''',
-'					|| case when RET.IN_OUT = ''OUT'' then ''FUNCTION'' else ''PROCEDURE'' end',
-'					|| ''\s+''||PRO.PROCEDURE_NAME',
-'					|| case when ARG.ARGS_COUNT > 1 then ''\s*\(.+?\)'' end',
-'					|| case when RET.IN_OUT = ''OUT'' then ''\s*RETURN\s+.*?'' else ''\s*'' end',
-'					|| '');'',',
+'                    || case when RET.IN_OUT = ''OUT'' then ',
+'                        ''FUNCTION'' ',
+'                        || ''\s+''||PRO.PROCEDURE_NAME',
+'                        || case when ARG.ARGS_COUNT > 1 then ''\s*\(.+?\)'' end',
+'                        || ''\s*RETURN\s+.*?''',
+'                      else ',
+'                        ''PROCEDURE'' ',
+'                        || ''\s+''||PRO.PROCEDURE_NAME',
+'                        || case when ARG.ARGS_COUNT > 0 then ''\s*\(.+?\)'' end',
+'                        || ''\s*''',
+'                    end',
+'                    || '');'',',
 '					1, ',
 '					DENSE_RANK() OVER (PARTITION BY PRO.PROCEDURE_NAME, RET.IN_OUT, SIGN(ARG.ARGS_COUNT) ORDER BY PRO.SUBPROGRAM_ID),',
 '					''in'', 1',
 '					),',
-'				case when RET.IN_OUT = ''OUT'' then ''FUNCTION'' else ''PROCEDURE'' end',
-'					|| '' '' || PRO.PROCEDURE_NAME',
-'					|| case when ARG.ARGS_COUNT > 1 then ''('' || PARAM_LIST || '')'' end',
-'					|| case when RET.IN_OUT = ''OUT'' then '' RETURN '' || RET.RETURN_TYPE end',
-'					|| ''; ''',
-'					|| '' -- pattern NOT FOUND''',
-'				)',
-'				 AS HEADER, -- find original procedure header with parameter default values',
-'            	case when RET.RETURN_TYPE IS NOT NULL then ',
-'            		NL(p_Indent + 4) || p_Variable_Name || '' '' || LOWER(RET.RETURN_TYPE) || '';''',
-'            	end',
-'            	|| NL(p_Indent) ||'))
+'					case when RET.IN_OUT = ''OUT'' then ',
+'						''FUNCTION'' ',
+'						|| '' '' || PRO.PROCEDURE_NAME',
+'						|| case when ARG.ARGS_COUNT > 1 then ''('' || PARAM_LIST || '')'' end',
+'						|| '' RETURN '' || RET.RETURN_TYPE',
+'					else ',
+'						''PROCEDURE'' ',
+'						|| '' '' || PRO.PROCEDURE_NAME',
+'						|| cas'))
 );
 null;
 end;
@@ -15540,7 +15544,14 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-' ''begin''',
+'e when ARG.ARGS_COUNT > 0 then ''('' || PARAM_LIST || '')'' end',
+'					end',
+'					|| ''; ''',
+'				) AS HEADER, -- find original procedure header with parameter default values',
+'            	case when RET.RETURN_TYPE IS NOT NULL then ',
+'            		NL(p_Indent + 4) || p_Variable_Name || '' '' || LOWER(RET.RETURN_TYPE) || '';''',
+'            	end',
+'            	|| NL(p_Indent) || ''begin''',
 '				AS PRO_BEGIN,',
 '				case when RETURN_TYPE IS NOT NULL',
 '            		and PRO.PIPELINED = ''NO''',
@@ -16277,14 +16288,7 @@ wwv_flow_api.append_to_install_script(
 '				LEFT OUTER JOIN MV_PACKAGE_RECORD_TYPES T ',
 '					on (S.Item_type = T.Package_Owner||''.''||T.Package_Name||''.''||T.Type_Name',
 '					or S.Item_type = T.Package_Name||''.'' ||T.Type_Name and S.Package_Owner = T.Package_Owner',
-'					or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name and S.Package_Owner = T.Package_Owner)',
-'				WHERE (S.Table_Type != ''RECORD'' or S.Nested_Table = ''Y'' ) --  Important',
-'				GROUP BY S.Package_Name, S.Package_Owner, S.Type_Name, ',
-'					S.Index_By, S.Table_Type',
-'            ), RETURN_Q AS (',
-'                SELECT A.PACKAGE_NAME, A.OWNER, A.OBJECT_NAME PROCEDURE_NAME, A.SUBPROGRAM_ID, ',
-'                        A.IN_OUT, ',
-'            '))
+'					or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name and S.Package_Owner'))
 );
 null;
 end;
@@ -16293,7 +16297,14 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'            A.DATA_TYPE RETURN_DATA_TYPE,',
+' = T.Package_Owner)',
+'				WHERE (S.Table_Type != ''RECORD'' or S.Nested_Table = ''Y'' ) --  Important',
+'				GROUP BY S.Package_Name, S.Package_Owner, S.Type_Name, ',
+'					S.Index_By, S.Table_Type',
+'            ), RETURN_Q AS (',
+'                SELECT A.PACKAGE_NAME, A.OWNER, A.OBJECT_NAME PROCEDURE_NAME, A.SUBPROGRAM_ID, ',
+'                        A.IN_OUT, ',
+'                        A.DATA_TYPE RETURN_DATA_TYPE,',
 '                        A.TYPE_NAME RETURN_TYPE_NAME,',
 '                        A.TYPE_OWNER RETURN_TYPE_OWNER,',
 '                        A.TYPE_SUBNAME RETURN_TYPE_SUBNAME,',
@@ -16891,14 +16902,7 @@ wwv_flow_api.append_to_install_script(
 '                    then',
 '                        v_sqltext := v_sqltext || chr(10) ',
 '						|| ''is'' ',
-'						|| NL(4) || ''lv_temp '' || v_proc_tbl(ind).RETURN_TYPE || '';'' ',
-'                        || NL(4) ||p_Variable_Name||'' '' || v_proc_tbl(ind).DEST_RETURN_TYPE || '';'' ',
-'						|| v_proc_tbl(ind).ARG_DECLARE_IN',
-'						|| chr(10) ',
-'                        || ''begin'' || chr(10) ',
-'                        || v_trace_call',
-'                        || ''    lv_temp := '' || v_calling_subprog',
-'                        || c'))
+'						|| NL(4) || ''lv_temp '' || v_proc_tbl(ind).R'))
 );
 null;
 end;
@@ -16907,7 +16911,14 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'ase when v_proc_tbl(ind).ARGS_COUNT > 0 then ''('' || v_proc_tbl(ind).CALL_PARAMETER || '')'' end ',
+'ETURN_TYPE || '';'' ',
+'                        || NL(4) ||p_Variable_Name||'' '' || v_proc_tbl(ind).DEST_RETURN_TYPE || '';'' ',
+'						|| v_proc_tbl(ind).ARG_DECLARE_IN',
+'						|| chr(10) ',
+'                        || ''begin'' || chr(10) ',
+'                        || v_trace_call',
+'                        || ''    lv_temp := '' || v_calling_subprog',
+'                        || case when v_proc_tbl(ind).ARGS_COUNT > 0 then ''('' || v_proc_tbl(ind).CALL_PARAMETER || '')'' end ',
 '                        || '';'' || chr(10) ',
 '                        || ''    ''||p_Variable_Name||'' := '' || v_proc_tbl(ind).DEST_RETURN_TYPE ',
 '                        || ''('' ',

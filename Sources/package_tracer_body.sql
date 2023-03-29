@@ -1254,23 +1254,34 @@ IS
                 )
                 || NVL(REGEXP_SUBSTR (v_Header,  
 					'('
-					|| case when RET.IN_OUT = 'OUT' then 'FUNCTION' else 'PROCEDURE' end
-					|| '\s+'||PRO.PROCEDURE_NAME
-					|| case when ARG.ARGS_COUNT > 1 then '\s*\(.+?\)' end
-					|| case when RET.IN_OUT = 'OUT' then '\s*RETURN\s+.*?' else '\s*' end
-					|| ');',
+                    || case when RET.IN_OUT = 'OUT' then 
+                        'FUNCTION' 
+                        || '\s+'||PRO.PROCEDURE_NAME
+                        || case when ARG.ARGS_COUNT > 1 then '\s*\(.+?\)' end
+                        || '\s*RETURN\s+.*?'
+                      else 
+                        'PROCEDURE' 
+                        || '\s+'||PRO.PROCEDURE_NAME
+                        || case when ARG.ARGS_COUNT > 0 then '\s*\(.+?\)' end
+                        || '\s*'
+                    end
+                    || ');',
 					1, 
 					DENSE_RANK() OVER (PARTITION BY PRO.PROCEDURE_NAME, RET.IN_OUT, SIGN(ARG.ARGS_COUNT) ORDER BY PRO.SUBPROGRAM_ID),
 					'in', 1
 					),
-				case when RET.IN_OUT = 'OUT' then 'FUNCTION' else 'PROCEDURE' end
-					|| ' ' || PRO.PROCEDURE_NAME
-					|| case when ARG.ARGS_COUNT > 1 then '(' || PARAM_LIST || ')' end
-					|| case when RET.IN_OUT = 'OUT' then ' RETURN ' || RET.RETURN_TYPE end
+					case when RET.IN_OUT = 'OUT' then 
+						'FUNCTION' 
+						|| ' ' || PRO.PROCEDURE_NAME
+						|| case when ARG.ARGS_COUNT > 1 then '(' || PARAM_LIST || ')' end
+						|| ' RETURN ' || RET.RETURN_TYPE
+					else 
+						'PROCEDURE' 
+						|| ' ' || PRO.PROCEDURE_NAME
+						|| case when ARG.ARGS_COUNT > 0 then '(' || PARAM_LIST || ')' end
+					end
 					|| '; '
-					|| ' -- pattern NOT FOUND'
-				)
-				 AS HEADER, -- find original procedure header with parameter default values
+				) AS HEADER, -- find original procedure header with parameter default values
             	case when RET.RETURN_TYPE IS NOT NULL then 
             		NL(p_Indent + 4) || p_Variable_Name || ' ' || LOWER(RET.RETURN_TYPE) || ';'
             	end
