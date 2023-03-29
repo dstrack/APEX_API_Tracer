@@ -104,5 +104,5 @@ A demo of the app can be found here:
 
 https://yboieokpjit8ejk-strackdev02.adb.eu-frankfurt-1.oraclecloudapps.com/ords/f?p=104:9999
 
-User/Password: demo/simple2021
+User/Password: demo/Simple2023
 
