@@ -27,7 +27,7 @@ prompt APPLICATION 103 - APEX API Tracer
 -- Application Export:
 --   Application:     103
 --   Name:            APEX API Tracer
---   Date and Time:   16:36 Wednesday March 29, 2023
+--   Date and Time:   15:47 Thursday April 13, 2023
 --   Exported By:     DIRK
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -120,7 +120,7 @@ wwv_flow_api.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'APEX API Tracer'
 ,p_last_updated_by=>'DIRK'
-,p_last_upd_yyyymmddhh24miss=>'20230329163527'
+,p_last_upd_yyyymmddhh24miss=>'20230413143955'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>9
 ,p_ui_type_name => null
@@ -14268,6 +14268,8 @@ wwv_flow_api.create_install_script(
 '    c_Quote CONSTANT VARCHAR2(1) := chr(39);    -- Quote Character',
 '    c_DQuote CONSTANT VARCHAR2(1) := chr(34);   -- Double Quote Character',
 '    c_Format_Error_Function CONSTANT VARCHAR2(64) := ''DBMS_UTILITY.FORMAT_ERROR_STACK''; -- function for formating for the current error. The output is concatinated to the message.',
+'	g_Hidden_Arguments_Array apex_t_varchar2 := APEX_STRING.SPLIT(''P_PASSWORD:P_PASS:P_WALLET_PWD:P_WEB_PASSWORD:P_OLD_PASSWORD:P_NEW_PASSWORD'', '':'');',
+'	-- g_Hidden_Arguments_Array apex_t_varchar2 := apex_t_varchar2();',
 '    ',
 '    FUNCTION in_list(',
 '        p_string in clob,',
@@ -14847,11 +14849,7 @@ unistr('                ''DBMS_LOB''  				-- PLS-00452: Unterprogramm ''DBFS_LIN
 '                                FROM USER_OBJECTS MV',
 '                                WHERE MV.OBJECT_NAME = T.TABLE_NAME',
 '                                AND MV.OBJECT_TYPE = ''MATERIALIZED VIEW''',
-'                            ) THEN ''SELECT, UPDATE, INSERT, DELETE '' ',
-'                            ELSE ''SELECT '' ',
-'                        END PRIVS,',
-'                        P.PKEY_CONS, C.TAB_COLUMNS',
-'                    FROM SYS.USER_TABLES '))
+'                          '))
 );
 end;
 /
@@ -14859,7 +14857,11 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'T',
+'  ) THEN ''SELECT, UPDATE, INSERT, DELETE '' ',
+'                            ELSE ''SELECT '' ',
+'                        END PRIVS,',
+'                        P.PKEY_CONS, C.TAB_COLUMNS',
+'                    FROM SYS.USER_TABLES T',
 '                    LEFT OUTER JOIN PKEY_Q P ON T.TABLE_NAME = P.TABLE_NAME',
 '                    LEFT OUTER JOIN COLS_Q C ON T.TABLE_NAME = C.TABLE_NAME',
 '                    WHERE T.IOT_NAME IS NULL    -- skip overflow tables of index organized tables',
@@ -15001,7 +15003,7 @@ wwv_flow_api.append_to_install_script(
 '				p_Record_Conversion || ''('' || p_Formatted_Name || '')''',
 '			when Is_Printable_DATA_Type(p_Data_Type) = ''YES'' then',
 '				''api_trace.''',
-'				|| case when p_Argument_Name in (''P_PASSWORD'', ''P_PASS'', ''P_WALLET_PWD'', ''P_WEB_PASSWORD'', ''P_OLD_PASSWORD'', ''P_NEW_PASSWORD'')',
+'				|| case when p_Argument_Name MEMBER OF g_Hidden_Arguments_Array',
 '					then ''Literal_PWD''',
 '				when p_Data_Type = ''RAW''',
 '					then ''Literal_RAW'' ',
@@ -15530,12 +15532,7 @@ wwv_flow_api.append_to_install_script(
 '					case when RET.IN_OUT = ''OUT'' then ',
 '						''FUNCTION'' ',
 '						|| '' '' || PRO.PROCEDURE_NAME',
-'						|| case when ARG.ARGS_COUNT > 1 then ''('' || PARAM_LIST || '')'' end',
-'						|| '' RETURN '' || RET.RETURN_TYPE',
-'					else ',
-'						''PROCEDURE'' ',
-'						|| '' '' || PRO.PROCEDURE_NAME',
-'						|| cas'))
+'						|| case when ARG.ARGS_COUNT > '))
 );
 null;
 end;
@@ -15544,7 +15541,12 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'e when ARG.ARGS_COUNT > 0 then ''('' || PARAM_LIST || '')'' end',
+'1 then ''('' || PARAM_LIST || '')'' end',
+'						|| '' RETURN '' || RET.RETURN_TYPE',
+'					else ',
+'						''PROCEDURE'' ',
+'						|| '' '' || PRO.PROCEDURE_NAME',
+'						|| case when ARG.ARGS_COUNT > 0 then ''('' || PARAM_LIST || '')'' end',
 '					end',
 '					|| ''; ''',
 '				) AS HEADER, -- find original procedure header with parameter default values',
@@ -16287,8 +16289,7 @@ wwv_flow_api.append_to_install_script(
 '				FROM MV_PACKAGE_RECORD_TYPES S',
 '				LEFT OUTER JOIN MV_PACKAGE_RECORD_TYPES T ',
 '					on (S.Item_type = T.Package_Owner||''.''||T.Package_Name||''.''||T.Type_Name',
-'					or S.Item_type = T.Package_Name||''.'' ||T.Type_Name and S.Package_Owner = T.Package_Owner',
-'					or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name and S.Package_Owner'))
+'					or S.Item_type = T.Package'))
 );
 null;
 end;
@@ -16297,7 +16298,8 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-' = T.Package_Owner)',
+'_Name||''.'' ||T.Type_Name and S.Package_Owner = T.Package_Owner',
+'					or S.Item_type = T.Type_Name and S.Package_Name = T.Package_Name and S.Package_Owner = T.Package_Owner)',
 '				WHERE (S.Table_Type != ''RECORD'' or S.Nested_Table = ''Y'' ) --  Important',
 '				GROUP BY S.Package_Name, S.Package_Owner, S.Type_Name, ',
 '					S.Index_By, S.Table_Type',
@@ -16516,7 +16518,7 @@ wwv_flow_api.append_to_install_script(
 '							AND A.TYPE_SUBNAME = T.TYPE_NAME',
 '					WHERE A.ORIGIN_CON_ID = A.MIN_ORIGIN_CON_ID',
 '				) A',
-'                GROUP BY PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID',
+'                GROUP BY PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID, ORIGIN_CON_ID',
 '            )',
 '            SELECT PRO.OBJECT_NAME, PRO.OWNER, PRO.PROCEDURE_NAME, ',
 '                PRO.SUBPROGRAM_ID, PRO.OVERLOAD,',
@@ -16898,11 +16900,7 @@ wwv_flow_api.append_to_install_script(
 '                    and v_proc_tbl(ind).PIPELINED = ''NO''',
 '                    and v_proc_tbl(ind).TYPE_OBJECT_TYPE = ''PACKAGE''',
 '                    and v_proc_tbl(ind).RETURN_TYPE != v_proc_tbl(ind).DEST_RETURN_TYPE',
-'                    and v_proc_tbl(ind).RETURN_DATA_TYPE = ''PL/SQL RECORD''',
-'                    then',
-'                        v_sqltext := v_sqltext || chr(10) ',
-'						|| ''is'' ',
-'						|| NL(4) || ''lv_temp '' || v_proc_tbl(ind).R'))
+'                    and v_proc_tbl(ind).RETURN_DATA_TYPE'))
 );
 null;
 end;
@@ -16911,7 +16909,11 @@ begin
 wwv_flow_api.append_to_install_script(
  p_id=>wwv_flow_api.id(263953810352951150)
 ,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'ETURN_TYPE || '';'' ',
+' = ''PL/SQL RECORD''',
+'                    then',
+'                        v_sqltext := v_sqltext || chr(10) ',
+'						|| ''is'' ',
+'						|| NL(4) || ''lv_temp '' || v_proc_tbl(ind).RETURN_TYPE || '';'' ',
 '                        || NL(4) ||p_Variable_Name||'' '' || v_proc_tbl(ind).DEST_RETURN_TYPE || '';'' ',
 '						|| v_proc_tbl(ind).ARG_DECLARE_IN',
 '						|| chr(10) ',

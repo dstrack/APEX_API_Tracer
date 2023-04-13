@@ -19,6 +19,8 @@ IS
     c_Quote CONSTANT VARCHAR2(1) := chr(39);    -- Quote Character
     c_DQuote CONSTANT VARCHAR2(1) := chr(34);   -- Double Quote Character
     c_Format_Error_Function CONSTANT VARCHAR2(64) := 'DBMS_UTILITY.FORMAT_ERROR_STACK'; -- function for formating for the current error. The output is concatinated to the message.
+	g_Hidden_Arguments_Array apex_t_varchar2 := APEX_STRING.SPLIT('P_PASSWORD:P_PASS:P_WALLET_PWD:P_WEB_PASSWORD:P_OLD_PASSWORD:P_NEW_PASSWORD', ':');
+	-- g_Hidden_Arguments_Array apex_t_varchar2 := apex_t_varchar2();
     
     FUNCTION in_list(
         p_string in clob,
@@ -744,7 +746,7 @@ IS
 				p_Record_Conversion || '(' || p_Formatted_Name || ')'
 			when Is_Printable_DATA_Type(p_Data_Type) = 'YES' then
 				'api_trace.'
-				|| case when p_Argument_Name in ('P_PASSWORD', 'P_PASS', 'P_WALLET_PWD', 'P_WEB_PASSWORD', 'P_OLD_PASSWORD', 'P_NEW_PASSWORD')
+				|| case when p_Argument_Name MEMBER OF g_Hidden_Arguments_Array
 					then 'Literal_PWD'
 				when p_Data_Type = 'RAW'
 					then 'Literal_RAW' 
@@ -2241,7 +2243,7 @@ IS
 							AND A.TYPE_SUBNAME = T.TYPE_NAME
 					WHERE A.ORIGIN_CON_ID = A.MIN_ORIGIN_CON_ID
 				) A
-                GROUP BY PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID
+                GROUP BY PACKAGE_NAME, OWNER, PROCEDURE_NAME, SUBPROGRAM_ID, ORIGIN_CON_ID
             )
             SELECT PRO.OBJECT_NAME, PRO.OWNER, PRO.PROCEDURE_NAME, 
                 PRO.SUBPROGRAM_ID, PRO.OVERLOAD,
